@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.DatePicker;
 import android.widget.EditText;
@@ -36,19 +37,29 @@ public class MainActivity extends Activity {
     private float swipeStartY;
     private long lastMonthSwipeTime;
     private boolean monthAnimating;
+    private boolean monthDragging;
     private LocalDate selectedDate;
+    private LocalDate lastTappedDate;
+    private long lastTapTime;
     private LinearLayout memoPanel;
     private TextView selectedMemoTitle;
     private TextView selectedMemoContent;
 
     private final int[] eventPalette = new int[]{
-            Color.rgb(25, 118, 210),
-            Color.rgb(56, 142, 60),
-            Color.rgb(245, 124, 0),
-            Color.rgb(123, 31, 162),
-            Color.rgb(0, 137, 123),
-            Color.rgb(198, 40, 40),
-            Color.rgb(93, 64, 55)
+            Color.rgb(255, 59, 48),
+            Color.rgb(255, 149, 0),
+            Color.rgb(255, 204, 0),
+            Color.rgb(52, 199, 89),
+            Color.rgb(48, 209, 88),
+            Color.rgb(99, 230, 226),
+            Color.rgb(64, 200, 224),
+            Color.rgb(0, 122, 255),
+            Color.rgb(88, 86, 214),
+            Color.rgb(175, 82, 222),
+            Color.rgb(255, 45, 85),
+            Color.rgb(162, 132, 94),
+            Color.rgb(142, 142, 147),
+            Color.rgb(90, 200, 250)
     };
 
     @Override
@@ -66,17 +77,44 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (calendarGrid == null) return super.dispatchTouchEvent(event);
+
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             swipeStartX = event.getX();
             swipeStartY = event.getY();
-        } else if (event.getAction() == MotionEvent.ACTION_UP) {
-            float dx = event.getX() - swipeStartX;
-            float dy = event.getY() - swipeStartY;
-            int threshold = dp(120); // 낮은 민감도: 충분히 길게 넘겨야 월 이동
-            long now = System.currentTimeMillis();
-            if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy) * 2.0f && now - lastMonthSwipeTime > 400) {
-                lastMonthSwipeTime = now;
-                changeMonth(dx < 0 ? 1 : -1, true);
+            monthDragging = false;
+            if (!monthAnimating) calendarGrid.animate().cancel();
+        } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
+            if (!monthAnimating) {
+                float dx = event.getX() - swipeStartX;
+                float dy = event.getY() - swipeStartY;
+                if (monthDragging || (Math.abs(dx) > dp(26) && Math.abs(dx) > Math.abs(dy) * 1.45f)) {
+                    monthDragging = true;
+                    float width = Math.max(1, calendarGrid.getWidth());
+                    float dragX = dx * 0.78f;
+                    calendarGrid.setTranslationX(dragX);
+                    calendarGrid.setAlpha(1f - Math.min(0.10f, Math.abs(dragX) / width * 0.10f));
+                    return true;
+                }
+            }
+        } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+            if (monthDragging) {
+                float dx = event.getX() - swipeStartX;
+                float dragX = dx * 0.78f;
+                int threshold = dp(120); // 낮은 민감도: 충분히 길게 넘겨야 월 이동
+                long now = System.currentTimeMillis();
+                if (Math.abs(dx) > threshold && now - lastMonthSwipeTime > 350) {
+                    lastMonthSwipeTime = now;
+                    changeMonthFromDrag(dx < 0 ? 1 : -1, dragX);
+                } else {
+                    calendarGrid.animate()
+                            .translationX(0)
+                            .alpha(1f)
+                            .setDuration(180)
+                            .setInterpolator(new DecelerateInterpolator())
+                            .start();
+                }
+                monthDragging = false;
                 return true;
             }
         }
@@ -180,27 +218,44 @@ public class MainActivity extends Activity {
             updateSelectedMemoPanel(selectedDate);
             return;
         }
+        animateMonthTransition(delta, 0f);
+    }
 
+    private void changeMonthFromDrag(int delta, float dragTranslation) {
+        if (monthAnimating) return;
+        animateMonthTransition(delta, dragTranslation);
+    }
+
+    private void animateMonthTransition(int delta, float startTranslation) {
         monthAnimating = true;
-        float width = calendarGrid.getWidth();
+        float width = Math.max(1, calendarGrid.getWidth());
         float outX = delta > 0 ? -width : width;
         float inX = delta > 0 ? width : -width;
 
+        calendarGrid.animate().cancel();
+        calendarGrid.setTranslationX(startTranslation);
+        calendarGrid.setAlpha(1f);
+
+        float remainingRatio = Math.abs(outX - startTranslation) / width;
+        long outDuration = Math.max(90L, (long) (210L * remainingRatio));
+
         calendarGrid.animate()
                 .translationX(outX)
-                .alpha(0.10f)
-                .setDuration(150)
+                .alpha(0.96f)
+                .setDuration(outDuration)
+                .setInterpolator(new DecelerateInterpolator())
                 .withEndAction(() -> {
                     currentMonth = currentMonth.plusMonths(delta);
                     selectedDate = currentMonth.withDayOfMonth(1);
                     renderMonth();
                     updateSelectedMemoPanel(selectedDate);
                     calendarGrid.setTranslationX(inX);
-                    calendarGrid.setAlpha(0.10f);
+                    calendarGrid.setAlpha(0.96f);
                     calendarGrid.animate()
                             .translationX(0)
                             .alpha(1f)
-                            .setDuration(190)
+                            .setDuration(260)
+                            .setInterpolator(new DecelerateInterpolator())
                             .withEndAction(() -> monthAnimating = false)
                             .start();
                 })
@@ -269,12 +324,22 @@ public class MainActivity extends Activity {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        cell.setPadding(dp(1), dp(2), dp(1), dp(1));
+        cell.setPadding(0, dp(2), 0, dp(1));
         cell.setBackground(makeCellBackground(inCurrentMonth, isToday, isSelected));
         cell.setOnClickListener(v -> {
+            long now = System.currentTimeMillis();
+            boolean doubleTap = lastTappedDate != null && lastTappedDate.equals(date) && now - lastTapTime < 420;
             selectedDate = date;
             updateSelectedMemoPanel(date);
             renderMonth();
+            if (doubleTap) {
+                lastTappedDate = null;
+                lastTapTime = 0L;
+                showDayDetail(date);
+            } else {
+                lastTappedDate = date;
+                lastTapTime = now;
+            }
         });
         cell.setOnLongClickListener(v -> {
             showDayDetail(date);
@@ -350,7 +415,7 @@ public class MainActivity extends Activity {
             bar.setBackgroundColor(barColor);
             LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
-            barParams.setMargins(dp(2), dp(1), dp(2), 0);
+            barParams.setMargins(0, dp(1), 0, 0);
             cell.addView(bar, barParams);
         }
         if (dayEvents.size() > 3) {
@@ -643,8 +708,7 @@ public class MainActivity extends Activity {
                     String title = titleInput.getText().toString().trim();
                     String memo = memoInput.getText().toString().trim();
                     if (title.isEmpty()) {
-                        Toast.makeText(this, "제목을 입력하세요.", Toast.LENGTH_SHORT).show();
-                        return;
+                        title = memo.isEmpty() ? "일정" : "메모";
                     }
                     if (endDate[0].isBefore(startDate[0])) {
                         Toast.makeText(this, "종료 날짜가 시작 날짜보다 빠릅니다.", Toast.LENGTH_SHORT).show();
@@ -923,7 +987,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.3-ios-ui\n\n" +
+        String message = "3교대 달력알람 v0.4-smooth-calendar\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
@@ -943,11 +1007,11 @@ public class MainActivity extends Activity {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(inCurrentMonth ? Color.WHITE : Color.rgb(250, 250, 250));
         if (isSelected) {
-            drawable.setStroke(dp(2), Color.rgb(0, 122, 255));
+            drawable.setStroke(dp(2), Color.rgb(90, 200, 250));
         } else if (isToday) {
-            drawable.setStroke(dp(2), Color.rgb(52, 199, 89));
+            drawable.setStroke(dp(1), Color.rgb(174, 220, 255));
         } else {
-            drawable.setStroke(dp(1), Color.rgb(229, 229, 234));
+            drawable.setStroke(dp(1), Color.rgb(242, 242, 247));
         }
         return drawable;
     }
