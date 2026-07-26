@@ -13,7 +13,7 @@ import java.util.List;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "shift_calendar_alarm.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public static final String SETTING_BASE_DATE = "base_day_shift_date";
 
@@ -58,18 +58,40 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS settings");
-        db.execSQL("DROP TABLE IF EXISTS shift_types");
-        db.execSQL("DROP TABLE IF EXISTS shift_overrides");
-        db.execSQL("DROP TABLE IF EXISTS period_events");
-        onCreate(db);
+        if (oldVersion < 2) {
+            updateDefaultShiftTypes(db);
+        }
     }
 
     private void seedDefaultShiftTypes(SQLiteDatabase db) {
-        insertShiftType(db, CODE_DAY, "주간", "주", Color.rgb(25, 118, 210), "근무", true, true, 1);
-        insertShiftType(db, CODE_DUTY, "당직", "당", Color.rgb(230, 81, 0), "근무", true, true, 2);
-        insertShiftType(db, CODE_OFF, "비번", "비", Color.rgb(97, 97, 97), "휴무", true, true, 3);
-        insertShiftType(db, CODE_JUHYU, "주휴", "휴", Color.rgb(123, 31, 162), "휴무", true, true, 4);
+        insertShiftType(db, CODE_DAY, "주간", "주간", Color.rgb(187, 222, 251), "근무", true, true, 1);
+        insertShiftType(db, CODE_DUTY, "당직", "당직", Color.rgb(255, 224, 178), "근무", true, true, 2);
+        insertShiftType(db, CODE_OFF, "비번", "비번", Color.rgb(200, 230, 201), "휴무", true, true, 3);
+        insertShiftType(db, CODE_JUHYU, "주휴", "주휴", Color.rgb(225, 190, 231), "휴무", true, true, 4);
+    }
+
+    private void updateDefaultShiftTypes(SQLiteDatabase db) {
+        updateDefaultShiftType(db, CODE_DAY, "주간", "주간", Color.rgb(187, 222, 251), "근무", 1);
+        updateDefaultShiftType(db, CODE_DUTY, "당직", "당직", Color.rgb(255, 224, 178), "근무", 2);
+        updateDefaultShiftType(db, CODE_OFF, "비번", "비번", Color.rgb(200, 230, 201), "휴무", 3);
+        updateDefaultShiftType(db, CODE_JUHYU, "주휴", "주휴", Color.rgb(225, 190, 231), "휴무", 4);
+    }
+
+    private void updateDefaultShiftType(SQLiteDatabase db, String code, String name, String shortName,
+                                        int color, String category, int sortOrder) {
+        ContentValues values = new ContentValues();
+        values.put("name", name);
+        values.put("short_name", shortName);
+        values.put("color", color);
+        values.put("category", category);
+        values.put("is_default", 1);
+        values.put("alarm_enabled", 1);
+        values.put("sort_order", sortOrder);
+        values.put("active", 1);
+        int updated = db.update("shift_types", values, "code=?", new String[]{code});
+        if (updated == 0) {
+            insertShiftType(db, code, name, shortName, color, category, true, true, sortOrder);
+        }
     }
 
     private long insertShiftType(SQLiteDatabase db, String code, String name, String shortName, int color,
