@@ -24,7 +24,9 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -279,10 +281,12 @@ public class MainActivity extends Activity {
         LocalDate firstDay = currentMonth.withDayOfMonth(1);
         int startOffset = firstDay.getDayOfWeek().getValue() % 7;
         LocalDate gridStart = firstDay.minusDays(startOffset);
+        LocalDate gridEnd = gridStart.plusDays(41);
+        Map<Long, Integer> eventLaneMap = buildEventLaneMap(monthEvents, gridStart, gridEnd);
 
         for (int i = 0; i < 42; i++) {
             LocalDate date = gridStart.plusDays(i);
-            calendarGrid.addView(createDayCell(date, monthEvents));
+            calendarGrid.addView(createDayCell(date, monthEvents, eventLaneMap));
         }
 
         if (selectedDate == null || selectedDate.getYear() != currentMonth.getYear() ||
@@ -314,7 +318,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private View createDayCell(final LocalDate date, List<PeriodEvent> monthEvents) {
+    private View createDayCell(final LocalDate date, List<PeriodEvent> monthEvents, Map<Long, Integer> eventLaneMap) {
         boolean inCurrentMonth = date.getMonthValue() == currentMonth.getMonthValue() && date.getYear() == currentMonth.getYear();
         boolean isToday = date.equals(LocalDate.now());
         boolean isSelected = selectedDate != null && date.equals(selectedDate);
@@ -341,11 +345,6 @@ public class MainActivity extends Activity {
                 lastTapTime = now;
             }
         });
-        cell.setOnLongClickListener(v -> {
-            showDayDetail(date);
-            return true;
-        });
-
         GridLayout.LayoutParams params = new GridLayout.LayoutParams();
         params.width = 0;
         params.height = dp(74);
@@ -407,20 +406,38 @@ public class MainActivity extends Activity {
         cell.addView(spacer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
-        List<PeriodEvent> dayEvents = eventsCovering(date, monthEvents);
-        int shown = Math.min(dayEvents.size(), 3);
-        for (int i = 0; i < shown; i++) {
-            View bar = new View(this);
-            int barColor = inCurrentMonth ? dayEvents.get(i).color : fadeColor(dayEvents.get(i).color);
-            bar.setBackgroundColor(barColor);
-            LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
-            barParams.setMargins(0, dp(1), 0, 0);
-            cell.addView(bar, barParams);
+        PeriodEvent[] laneEvents = new PeriodEvent[3];
+        int hiddenEventCount = 0;
+        boolean hasAnyVisibleOrHiddenEvent = false;
+        for (PeriodEvent event : monthEvents) {
+            if (!event.covers(date)) continue;
+            hasAnyVisibleOrHiddenEvent = true;
+            Integer lane = eventLaneMap.get(event.id);
+            if (lane != null && lane >= 0 && lane < 3) {
+                laneEvents[lane] = event;
+            } else {
+                hiddenEventCount++;
+            }
         }
-        if (dayEvents.size() > 3) {
+
+        if (hasAnyVisibleOrHiddenEvent) {
+            for (int lane = 0; lane < 3; lane++) {
+                View bar = new View(this);
+                if (laneEvents[lane] != null) {
+                    int barColor = inCurrentMonth ? laneEvents[lane].color : fadeColor(laneEvents[lane].color);
+                    bar.setBackgroundColor(barColor);
+                } else {
+                    bar.setBackgroundColor(Color.TRANSPARENT);
+                }
+                LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
+                barParams.setMargins(0, dp(1), 0, 0);
+                cell.addView(bar, barParams);
+            }
+        }
+        if (hiddenEventCount > 0) {
             TextView more = new TextView(this);
-            more.setText("+" + (dayEvents.size() - 3));
+            more.setText("+" + hiddenEventCount);
             more.setTextSize(7);
             more.setGravity(Gravity.CENTER);
             more.setTextColor(inCurrentMonth ? Color.rgb(99, 99, 102) : Color.LTGRAY);
@@ -428,6 +445,44 @@ public class MainActivity extends Activity {
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(9)));
         }
         return cell;
+    }
+
+    private Map<Long, Integer> buildEventLaneMap(List<PeriodEvent> events, LocalDate gridStart, LocalDate gridEnd) {
+        Map<Long, Integer> result = new HashMap<>();
+        List<PeriodEvent> sorted = new ArrayList<>(events);
+        // 나중에 추가한 일정일수록 위쪽 라인을 우선 사용한다.
+        sorted.sort((a, b) -> Long.compare(b.id, a.id));
+
+        List<List<PeriodEvent>> lanes = new ArrayList<>();
+        for (PeriodEvent event : sorted) {
+            LocalDate clippedStart = event.startDate.isBefore(gridStart) ? gridStart : event.startDate;
+            LocalDate clippedEnd = event.endDate.isAfter(gridEnd) ? gridEnd : event.endDate;
+            int assignedLane = -1;
+
+            for (int lane = 0; lane < lanes.size(); lane++) {
+                boolean overlaps = false;
+                for (PeriodEvent existing : lanes.get(lane)) {
+                    LocalDate existingStart = existing.startDate.isBefore(gridStart) ? gridStart : existing.startDate;
+                    LocalDate existingEnd = existing.endDate.isAfter(gridEnd) ? gridEnd : existing.endDate;
+                    if (!clippedEnd.isBefore(existingStart) && !clippedStart.isAfter(existingEnd)) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+                if (!overlaps) {
+                    assignedLane = lane;
+                    break;
+                }
+            }
+
+            if (assignedLane == -1) {
+                assignedLane = lanes.size();
+                lanes.add(new ArrayList<>());
+            }
+            lanes.get(assignedLane).add(event);
+            result.put(event.id, assignedLane);
+        }
+        return result;
     }
 
     private void updateSelectedMemoPanel(LocalDate date) {
@@ -450,7 +505,7 @@ public class MainActivity extends Activity {
 
         if (events.isEmpty()) {
             sb.append("메모/일정 없음\n");
-            sb.append("살짝 누르면 이 영역에 메모가 표시되고, 길게 누르면 근무 변경/일정 추가로 들어갑니다.");
+            sb.append("살짝 누르면 이 영역에 메모가 표시되고, 두 번 누르면 근무 변경/일정 추가로 들어갑니다.");
         } else {
             sb.append("메모/일정\n");
             for (PeriodEvent event : events) {
@@ -464,7 +519,7 @@ public class MainActivity extends Activity {
                 }
                 sb.append("\n");
             }
-            sb.append("\n길게 누르면 근무 변경/일정 추가.");
+            sb.append("\n두 번 누르면 근무 변경/일정 추가.");
         }
         selectedMemoContent.setText(sb.toString().trim());
     }
@@ -987,7 +1042,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.4-smooth-calendar\n\n" +
+        String message = "3교대 달력알람 v0.5-event-lines\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
