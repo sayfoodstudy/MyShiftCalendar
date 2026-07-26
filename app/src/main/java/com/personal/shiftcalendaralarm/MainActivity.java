@@ -8,6 +8,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.DatePicker;
@@ -31,6 +32,9 @@ public class MainActivity extends Activity {
     private TextView monthTitle;
     private TextView baseInfoText;
     private GridLayout calendarGrid;
+    private float swipeStartX;
+    private float swipeStartY;
+    private long lastMonthSwipeTime;
 
     private final int[] eventPalette = new int[]{
             Color.rgb(25, 118, 210),
@@ -54,77 +58,86 @@ public class MainActivity extends Activity {
         }
     }
 
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            swipeStartX = event.getX();
+            swipeStartY = event.getY();
+        } else if (event.getAction() == MotionEvent.ACTION_UP) {
+            float dx = event.getX() - swipeStartX;
+            float dy = event.getY() - swipeStartY;
+            int threshold = dp(120); // 낮은 민감도: 충분히 길게 넘겨야 월 이동
+            long now = System.currentTimeMillis();
+            if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy) * 2.0f && now - lastMonthSwipeTime > 400) {
+                if (dx < 0) {
+                    currentMonth = currentMonth.plusMonths(1);
+                } else {
+                    currentMonth = currentMonth.minusMonths(1);
+                }
+                lastMonthSwipeTime = now;
+                renderMonth();
+                return true;
+            }
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
     private void buildMainLayout() {
         ScrollView scrollView = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(10), dp(10), dp(10), dp(16));
+        root.setPadding(dp(2), dp(2), dp(2), dp(6));
         scrollView.addView(root);
-
-        TextView title = new TextView(this);
-        title.setText("3교대 달력알람");
-        title.setTextSize(24);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setGravity(Gravity.CENTER);
-        root.addView(title, matchWrap());
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(0, dp(8), 0, dp(4));
+        header.setPadding(0, 0, 0, dp(2));
         root.addView(header, matchWrap());
 
-        Button prevButton = new Button(this);
-        prevButton.setText("<");
+        Button prevButton = makeCompactButton("<");
         prevButton.setOnClickListener(v -> {
             currentMonth = currentMonth.minusMonths(1);
             renderMonth();
         });
-        header.addView(prevButton, new LinearLayout.LayoutParams(dp(56), LinearLayout.LayoutParams.WRAP_CONTENT));
+        header.addView(prevButton, new LinearLayout.LayoutParams(dp(34), dp(34)));
 
         monthTitle = new TextView(this);
-        monthTitle.setTextSize(21);
+        monthTitle.setTextSize(20);
         monthTitle.setTypeface(Typeface.DEFAULT_BOLD);
         monthTitle.setGravity(Gravity.CENTER);
-        header.addView(monthTitle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        monthTitle.setSingleLine(true);
+        header.addView(monthTitle, new LinearLayout.LayoutParams(0, dp(34), 1));
 
-        Button nextButton = new Button(this);
-        nextButton.setText(">");
+        Button nextButton = makeCompactButton(">");
         nextButton.setOnClickListener(v -> {
             currentMonth = currentMonth.plusMonths(1);
             renderMonth();
         });
-        header.addView(nextButton, new LinearLayout.LayoutParams(dp(56), LinearLayout.LayoutParams.WRAP_CONTENT));
+        header.addView(nextButton, new LinearLayout.LayoutParams(dp(34), dp(34)));
 
-        Button todayButton = new Button(this);
-        todayButton.setText("오늘");
+        Button todayButton = makeCompactButton("오늘");
         todayButton.setOnClickListener(v -> {
             currentMonth = LocalDate.now().withDayOfMonth(1);
             renderMonth();
         });
-        root.addView(todayButton, matchWrap());
+        header.addView(todayButton, new LinearLayout.LayoutParams(dp(48), dp(34)));
 
-        Button settingsButton = new Button(this);
-        settingsButton.setText("설정 / 근무 종류 관리");
+        Button settingsButton = makeCompactButton("설정");
         settingsButton.setOnClickListener(v -> showSettingsDialog());
-        root.addView(settingsButton, matchWrap());
+        header.addView(settingsButton, new LinearLayout.LayoutParams(dp(52), dp(34)));
 
         baseInfoText = new TextView(this);
-        baseInfoText.setTextSize(14);
-        baseInfoText.setPadding(dp(4), dp(6), dp(4), dp(8));
+        baseInfoText.setTextSize(11);
+        baseInfoText.setSingleLine(true);
+        baseInfoText.setTextColor(Color.DKGRAY);
+        baseInfoText.setPadding(dp(3), 0, dp(3), dp(2));
         root.addView(baseInfoText, matchWrap());
 
         calendarGrid = new GridLayout(this);
         calendarGrid.setColumnCount(7);
         calendarGrid.setUseDefaultMargins(false);
         root.addView(calendarGrid, matchWrap());
-
-        TextView guide = new TextView(this);
-        guide.setText("날짜를 누르면 근무 변경과 기간 일정을 추가할 수 있습니다. 수동 변경은 선택한 날짜 하루에만 적용됩니다.");
-        guide.setTextSize(13);
-        guide.setTextColor(Color.DKGRAY);
-        guide.setPadding(dp(4), dp(10), dp(4), 0);
-        root.addView(guide, matchWrap());
 
         setContentView(scrollView);
     }
@@ -134,10 +147,9 @@ public class MainActivity extends Activity {
 
         LocalDate baseDate = db.getBaseDate();
         if (baseDate == null) {
-            baseInfoText.setText("주간 시작일이 아직 설정되지 않았습니다. 설정 후 정확한 3교대 달력이 표시됩니다.");
+            baseInfoText.setText("주간 시작일 미설정");
         } else {
-            baseInfoText.setText("주간 시작일: " + baseDate.format(DateUtil.KOREAN_DATE) +
-                    "  /  규칙: 주간 → 당직 → 비번 반복  /  주간+휴일=주휴");
+            baseInfoText.setText("주간 시작일 " + DateUtil.iso(baseDate) + " / 주→당→비 / 주간+휴일=주휴");
         }
 
         calendarGrid.removeAllViews();
@@ -161,8 +173,8 @@ public class MainActivity extends Activity {
             tv.setText(headers[i]);
             tv.setGravity(Gravity.CENTER);
             tv.setTypeface(Typeface.DEFAULT_BOLD);
-            tv.setTextSize(14);
-            tv.setPadding(0, dp(5), 0, dp(5));
+            tv.setTextSize(12);
+            tv.setPadding(0, dp(3), 0, dp(3));
             if (i == 0) tv.setTextColor(Color.rgb(211, 47, 47));
             else if (i == 6) tv.setTextColor(Color.rgb(21, 101, 192));
             else tv.setTextColor(Color.DKGRAY);
@@ -185,71 +197,80 @@ public class MainActivity extends Activity {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        cell.setPadding(dp(3), dp(3), dp(3), dp(3));
+        cell.setPadding(dp(1), dp(1), dp(1), dp(1));
         cell.setBackground(makeCellBackground(inCurrentMonth, isToday));
         cell.setOnClickListener(v -> showDayDetail(date));
 
         GridLayout.LayoutParams params = new GridLayout.LayoutParams();
         params.width = 0;
-        params.height = dp(98);
+        params.height = dp(68);
         params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        params.setMargins(dp(1), dp(1), dp(1), dp(1));
+        params.setMargins(0, 0, 0, 0);
         cell.setLayoutParams(params);
 
         TextView dateText = new TextView(this);
         dateText.setText(String.valueOf(date.getDayOfMonth()));
-        dateText.setTextSize(13);
+        dateText.setTextSize(10);
         dateText.setTypeface(Typeface.DEFAULT_BOLD);
         dateText.setGravity(Gravity.CENTER);
-        if (!inCurrentMonth) dateText.setTextColor(Color.LTGRAY);
+        if (!inCurrentMonth) dateText.setTextColor(Color.rgb(185, 185, 185));
         else if (isHoliday || date.getDayOfWeek() == DayOfWeek.SUNDAY) dateText.setTextColor(Color.rgb(211, 47, 47));
         else if (date.getDayOfWeek() == DayOfWeek.SATURDAY) dateText.setTextColor(Color.rgb(21, 101, 192));
         else dateText.setTextColor(Color.rgb(33, 33, 33));
-        cell.addView(dateText, matchWrap());
+        cell.addView(dateText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(14)));
 
         ShiftResult result = calculateShift(date);
         if (result.finalShift != null) {
+            int badgeColor = inCurrentMonth ? result.finalShift.color : fadeColor(result.finalShift.color);
             TextView shiftBadge = new TextView(this);
             shiftBadge.setText(result.finalShift.displayShortName());
             shiftBadge.setSingleLine(true);
             shiftBadge.setGravity(Gravity.CENTER);
-            shiftBadge.setTextSize(12);
+            shiftBadge.setTextSize(22);
             shiftBadge.setTypeface(Typeface.DEFAULT_BOLD);
-            shiftBadge.setTextColor(contrastTextColor(result.finalShift.color));
-            shiftBadge.setBackground(makeRoundBackground(result.finalShift.color, dp(5)));
+            shiftBadge.setTextColor(inCurrentMonth ? contrastTextColor(badgeColor) : Color.rgb(130, 130, 130));
+            shiftBadge.setBackground(makeRoundBackground(badgeColor, dp(4)));
             LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            badgeParams.setMargins(0, dp(2), 0, dp(2));
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
+            badgeParams.setMargins(0, 0, 0, 0);
             cell.addView(shiftBadge, badgeParams);
         }
 
         if (publicHolidayName != null && inCurrentMonth) {
             TextView holidayText = new TextView(this);
             holidayText.setText(publicHolidayName);
-            holidayText.setTextSize(8);
+            holidayText.setTextSize(7);
             holidayText.setSingleLine(true);
             holidayText.setGravity(Gravity.CENTER);
             holidayText.setTextColor(Color.rgb(211, 47, 47));
-            cell.addView(holidayText, matchWrap());
+            cell.addView(holidayText, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(8)));
         }
+
+        View spacer = new View(this);
+        cell.addView(spacer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         List<PeriodEvent> dayEvents = eventsCovering(date, monthEvents);
         int shown = Math.min(dayEvents.size(), 3);
         for (int i = 0; i < shown; i++) {
             View bar = new View(this);
-            bar.setBackgroundColor(dayEvents.get(i).color);
+            int barColor = inCurrentMonth ? dayEvents.get(i).color : fadeColor(dayEvents.get(i).color);
+            bar.setBackgroundColor(barColor);
             LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(5));
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
             barParams.setMargins(0, dp(1), 0, 0);
             cell.addView(bar, barParams);
         }
         if (dayEvents.size() > 3) {
             TextView more = new TextView(this);
             more.setText("+" + (dayEvents.size() - 3));
-            more.setTextSize(8);
+            more.setTextSize(7);
             more.setGravity(Gravity.CENTER);
-            more.setTextColor(Color.DKGRAY);
-            cell.addView(more, matchWrap());
+            more.setTextColor(inCurrentMonth ? Color.DKGRAY : Color.LTGRAY);
+            cell.addView(more, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(9)));
         }
         return cell;
     }
@@ -791,9 +812,29 @@ public class MainActivity extends Activity {
 
     private GradientDrawable makeCellBackground(boolean inCurrentMonth, boolean isToday) {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(inCurrentMonth ? Color.WHITE : Color.rgb(246, 246, 246));
+        drawable.setColor(inCurrentMonth ? Color.WHITE : Color.rgb(250, 250, 250));
         drawable.setStroke(isToday ? dp(2) : dp(1), isToday ? Color.rgb(25, 118, 210) : Color.rgb(224, 224, 224));
         return drawable;
+    }
+
+    private Button makeCompactButton(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setTextSize(12);
+        button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(1), 0, dp(1), 0);
+        return button;
+    }
+
+    private int fadeColor(int color) {
+        int r = (int) (Color.red(color) * 0.35f + 255 * 0.65f);
+        int g = (int) (Color.green(color) * 0.35f + 255 * 0.65f);
+        int b = (int) (Color.blue(color) * 0.35f + 255 * 0.65f);
+        return Color.rgb(r, g, b);
     }
 
     private GradientDrawable makeRoundBackground(int color, int radius) {
