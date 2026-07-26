@@ -769,7 +769,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("기간 일정 추가")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (dialog, which) -> {
                     String title = titleInput.getText().toString().trim();
                     String memo = memoInput.getText().toString().trim();
@@ -818,6 +818,57 @@ public class MainActivity extends Activity {
             showExactAlarmPermissionDialog();
         }
 
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(10), dp(18), dp(4));
+
+        TextView guide = new TextView(this);
+        guide.setText("알람 만들기와 알람 목록을 분리했습니다. 알람을 수정/삭제하려면 '알람 목록 보기'로 들어가세요.");
+        guide.setTextSize(14);
+        guide.setTextColor(Color.DKGRAY);
+        root.addView(guide, matchWrap());
+
+        Button listButton = new Button(this);
+        listButton.setText("알람 목록 보기");
+        root.addView(listButton, matchWrap());
+
+        Button addBasic = new Button(this);
+        addBasic.setText("기본 알람 만들기");
+        root.addView(addBasic, matchWrap());
+
+        Button addShift = new Button(this);
+        addShift.setText("3교대 조건 알람 만들기");
+        root.addView(addShift, matchWrap());
+
+        Button permissionButton = new Button(this);
+        permissionButton.setText("알람/배터리 권한 안내");
+        root.addView(permissionButton, matchWrap());
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("알람")
+                .setView(wrapInScrollView(root))
+                .setNegativeButton("닫기", null)
+                .create();
+
+        listButton.setOnClickListener(v -> {
+            dialog.dismiss();
+            showAlarmList();
+        });
+        addBasic.setOnClickListener(v -> {
+            dialog.dismiss();
+            showAddBasicAlarmDialog();
+        });
+        addShift.setOnClickListener(v -> {
+            dialog.dismiss();
+            showAddShiftAlarmDialog();
+        });
+        permissionButton.setOnClickListener(v -> showAlarmPermissionGuide());
+        dialog.show();
+    }
+
+    private void showAlarmList() {
+        requestNotificationPermissionIfNeeded();
+
         ScrollView scrollView = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -825,7 +876,7 @@ public class MainActivity extends Activity {
         scrollView.addView(root);
 
         TextView guide = new TextView(this);
-        guide.setText("알람은 기본 알람음으로 울립니다. 화면 꺼짐/백그라운드 테스트 후 삼성 배터리 설정에서 제한 없음으로 두는 것을 추천합니다.");
+        guide.setText("알람 목록입니다. 여기에서 알람을 켜기/끄기/수정/삭제할 수 있습니다.");
         guide.setTextSize(13);
         guide.setTextColor(Color.DKGRAY);
         root.addView(guide, matchWrap());
@@ -841,35 +892,14 @@ public class MainActivity extends Activity {
             for (AlarmItem alarm : alarms) addAlarmRow(root, alarm);
         }
 
-        Button addBasic = new Button(this);
-        addBasic.setText("기본 알람 추가");
-        root.addView(addBasic, matchWrap());
-
-        Button addShift = new Button(this);
-        addShift.setText("3교대 조건 알람 추가");
-        root.addView(addShift, matchWrap());
-
-        Button permissionButton = new Button(this);
-        permissionButton.setText("알람/배터리 권한 안내");
-        root.addView(permissionButton, matchWrap());
-
         Button closeButton = new Button(this);
         closeButton.setText("닫기");
         root.addView(closeButton, matchWrap());
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("알람 관리")
+                .setTitle("알람 목록")
                 .setView(scrollView)
                 .create();
-        addBasic.setOnClickListener(v -> {
-            dialog.dismiss();
-            showAddBasicAlarmDialog();
-        });
-        addShift.setOnClickListener(v -> {
-            dialog.dismiss();
-            showAddShiftAlarmDialog();
-        });
-        permissionButton.setOnClickListener(v -> showAlarmPermissionGuide());
         closeButton.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
     }
@@ -933,16 +963,17 @@ public class MainActivity extends Activity {
             if (AlarmItem.MODE_SHIFT.equals(alarm.alarmMode)) showEditShiftAlarmDialog(alarm);
             else showEditBasicAlarmDialog(alarm);
         });
-        delete.setOnClickListener(v -> confirmDeleteAlarm(alarm));
+        delete.setOnClickListener(v -> confirmDeleteAlarm(alarm, root, box));
     }
 
-    private void confirmDeleteAlarm(final AlarmItem alarm) {
+    private void confirmDeleteAlarm(final AlarmItem alarm, final LinearLayout listRoot, final View alarmBox) {
         new AlertDialog.Builder(this)
                 .setTitle("알람 삭제")
                 .setMessage("'" + alarm.title + "' 알람을 삭제할까요?")
                 .setPositiveButton("삭제", (dialog, which) -> {
                     AlarmScheduler.cancelAlarm(this, alarm.id);
                     db.deleteAlarm(alarm.id);
+                    listRoot.removeView(alarmBox);
                     Toast.makeText(this, "알람을 삭제했습니다.", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("취소", null)
@@ -1001,7 +1032,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("기본 알람 추가")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (dialog, which) -> {
                     int hour = getTimePickerHour(timePicker);
                     int minute = getTimePickerMinute(timePicker);
@@ -1027,7 +1058,7 @@ public class MainActivity extends Activity {
                             true);
                     AlarmScheduler.scheduleAlarm(this, id);
                     Toast.makeText(this, "알람을 추가했습니다.", Toast.LENGTH_SHORT).show();
-                    showAlarmManager();
+                    showAlarmList();
                 })
                 .setNegativeButton("취소", null)
                 .show();
@@ -1102,7 +1133,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("3교대 조건 알람 추가")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (dialog, which) -> {
                     int hour = getTimePickerHour(timePicker);
                     int minute = getTimePickerMinute(timePicker);
@@ -1120,7 +1151,7 @@ public class MainActivity extends Activity {
                             true);
                     AlarmScheduler.scheduleAlarm(this, id);
                     Toast.makeText(this, "3교대 조건 알람을 추가했습니다.", Toast.LENGTH_SHORT).show();
-                    showAlarmManager();
+                    showAlarmList();
                 })
                 .setNegativeButton("취소", null)
                 .show();
@@ -1177,7 +1208,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("기본 알람 수정")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (dialog, which) -> {
                     int hour = getTimePickerHour(timePicker);
                     int minute = getTimePickerMinute(timePicker);
@@ -1281,7 +1312,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("3교대 조건 알람 수정")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (dialog, which) -> {
                     int hour = getTimePickerHour(timePicker);
                     int minute = getTimePickerMinute(timePicker);
@@ -1540,7 +1571,7 @@ public class MainActivity extends Activity {
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(firstRun ? "첫 설정: 주간 시작일" : "주간 시작일 설정")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (d, which) -> {
                     db.setBaseDate(selected[0]);
                     Toast.makeText(this, "주간 시작일을 저장했습니다.", Toast.LENGTH_SHORT).show();
@@ -1669,7 +1700,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("근무 종류 추가")
-                .setView(root)
+                .setView(wrapInScrollView(root))
                 .setPositiveButton("저장", (dialog, which) -> {
                     String name = nameInput.getText().toString().trim();
                     String shortName = shortInput.getText().toString().trim();
@@ -1732,7 +1763,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.7-alarm-edit\n\n" +
+        String message = "3교대 달력알람 v0.8-alarm-bg-ui\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
@@ -1818,6 +1849,12 @@ public class MainActivity extends Activity {
             result = getResources().getDimensionPixelSize(resourceId);
         }
         return result;
+    }
+
+    private ScrollView wrapInScrollView(View child) {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.addView(child);
+        return scrollView;
     }
 
     private LinearLayout.LayoutParams matchWrap() {
