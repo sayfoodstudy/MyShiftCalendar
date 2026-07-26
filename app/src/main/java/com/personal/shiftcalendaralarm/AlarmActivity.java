@@ -3,6 +3,7 @@ package com.personal.shiftcalendaralarm;
 import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
@@ -36,12 +37,10 @@ public class AlarmActivity extends Activity {
         loadAlarm();
         prepareLockScreenDisplay();
         buildUi();
-        startSoundAndVibration();
     }
 
     @Override
     protected void onDestroy() {
-        stopSoundAndVibration();
         super.onDestroy();
     }
 
@@ -109,6 +108,7 @@ public class AlarmActivity extends Activity {
         stopButton.setText("끄기");
         stopButton.setTextSize(20);
         stopButton.setOnClickListener(v -> {
+            stopAlarmService();
             cancelNotification();
             finish();
         });
@@ -123,6 +123,7 @@ public class AlarmActivity extends Activity {
                 AlarmScheduler.scheduleSnooze(this, alarmId, next);
                 Toast.makeText(this, "5분 뒤 다시 알림을 예약했습니다.", Toast.LENGTH_SHORT).show();
             }
+            stopAlarmService();
             cancelNotification();
             finish();
         });
@@ -166,6 +167,13 @@ public class AlarmActivity extends Activity {
         } catch (Exception ignored) { }
         try {
             if (vibrator != null) vibrator.cancel();
+        } catch (Exception ignored) { }
+    }
+
+    private void stopAlarmService() {
+        try {
+            Intent intent = new Intent(this, AlarmForegroundService.class);
+            stopService(intent);
         } catch (Exception ignored) { }
     }
 
