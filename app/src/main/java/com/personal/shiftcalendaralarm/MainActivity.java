@@ -20,9 +20,11 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.DatePicker;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.NumberPicker;
 import android.widget.Toast;
@@ -42,7 +44,10 @@ public class MainActivity extends Activity {
     private LocalDate currentMonth;
     private TextView monthTitle;
     private TextView baseInfoText;
+    private FrameLayout calendarFrame;
     private GridLayout calendarGrid;
+    private GridLayout neighborCalendarGrid;
+    private int neighborDelta;
     private float swipeStartX;
     private float swipeStartY;
     private long lastMonthSwipeTime;
@@ -89,13 +94,16 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if (calendarGrid == null) return super.dispatchTouchEvent(event);
+        if (calendarGrid == null || neighborCalendarGrid == null) return super.dispatchTouchEvent(event);
 
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             swipeStartX = event.getX();
             swipeStartY = event.getY();
             monthDragging = false;
-            if (!monthAnimating) calendarGrid.animate().cancel();
+            if (!monthAnimating) {
+                calendarGrid.animate().cancel();
+                neighborCalendarGrid.animate().cancel();
+            }
         } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
             if (!monthAnimating) {
                 float dx = event.getX() - swipeStartX;
@@ -103,122 +111,31 @@ public class MainActivity extends Activity {
                 if (monthDragging || (Math.abs(dx) > dp(26) && Math.abs(dx) > Math.abs(dy) * 1.45f)) {
                     monthDragging = true;
                     float width = Math.max(1, calendarGrid.getWidth());
-                    float dragX = dx * 0.78f;
+                    float dragX = dx * 0.86f;
+                    int delta = dragX < 0 ? 1 : -1;
+                    prepareNeighborMonth(delta);
                     calendarGrid.setTranslationX(dragX);
-                    calendarGrid.setAlpha(1f - Math.min(0.10f, Math.abs(dragX) / width * 0.10f));
+                    neighborCalendarGrid.setTranslationX((delta > 0 ? width : -width) + dragX);
                     return true;
                 }
             }
         } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
             if (monthDragging) {
                 float dx = event.getX() - swipeStartX;
-                float dragX = dx * 0.78f;
-                int threshold = dp(120); // 낮은 민감도: 충분히 길게 넘겨야 월 이동
+                float dragX = dx * 0.86f;
+                int threshold = dp(120);
                 long now = System.currentTimeMillis();
                 if (Math.abs(dx) > threshold && now - lastMonthSwipeTime > 350) {
                     lastMonthSwipeTime = now;
                     changeMonthFromDrag(dx < 0 ? 1 : -1, dragX);
                 } else {
-                    calendarGrid.animate()
-                            .translationX(0)
-                            .alpha(1f)
-                            .setDuration(180)
-                            .setInterpolator(new DecelerateInterpolator())
-                            .start();
+                    cancelMonthDrag(dragX < 0 ? 1 : -1, dragX);
                 }
                 monthDragging = false;
                 return true;
             }
         }
         return super.dispatchTouchEvent(event);
-    }
-
-    private void buildMainLayout() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(Color.WHITE);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
-        root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), dp(8));
-        scrollView.addView(root);
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(0, 0, 0, dp(6));
-        root.addView(header, matchWrap());
-
-        Button settingsButton = makeCompactButton("설정");
-        settingsButton.setOnClickListener(v -> showSettingsDialog());
-        header.addView(settingsButton, new LinearLayout.LayoutParams(dp(54), dp(34)));
-
-        Button prevButton = makeCompactButton("<");
-        prevButton.setOnClickListener(v -> changeMonth(-1, true));
-        LinearLayout.LayoutParams prevParams = new LinearLayout.LayoutParams(dp(34), dp(34));
-        prevParams.setMargins(dp(4), 0, 0, 0);
-        header.addView(prevButton, prevParams);
-
-        monthTitle = new TextView(this);
-        monthTitle.setTextSize(21);
-        monthTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        monthTitle.setGravity(Gravity.CENTER);
-        monthTitle.setSingleLine(true);
-        monthTitle.setTextColor(Color.rgb(28, 28, 30));
-        header.addView(monthTitle, new LinearLayout.LayoutParams(0, dp(34), 1));
-
-        Button todayButton = makeCompactButton("오늘");
-        todayButton.setOnClickListener(v -> {
-            selectedDate = LocalDate.now();
-            currentMonth = selectedDate.withDayOfMonth(1);
-            renderMonth();
-            updateSelectedMemoPanel(selectedDate);
-        });
-        header.addView(todayButton, new LinearLayout.LayoutParams(dp(50), dp(34)));
-
-        Button nextButton = makeCompactButton(">");
-        nextButton.setOnClickListener(v -> changeMonth(1, true));
-        LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(dp(34), dp(34));
-        nextParams.setMargins(dp(4), 0, 0, 0);
-        header.addView(nextButton, nextParams);
-
-        baseInfoText = new TextView(this);
-        baseInfoText.setTextSize(11);
-        baseInfoText.setSingleLine(true);
-        baseInfoText.setTextColor(Color.rgb(142, 142, 147));
-        baseInfoText.setPadding(dp(3), 0, dp(3), dp(4));
-        root.addView(baseInfoText, matchWrap());
-
-        calendarGrid = new GridLayout(this);
-        calendarGrid.setColumnCount(7);
-        calendarGrid.setUseDefaultMargins(false);
-        root.addView(calendarGrid, matchWrap());
-
-        memoPanel = new LinearLayout(this);
-        memoPanel.setOrientation(LinearLayout.VERTICAL);
-        memoPanel.setPadding(dp(14), dp(10), dp(14), dp(10));
-        GradientDrawable memoBg = new GradientDrawable();
-        memoBg.setColor(Color.rgb(242, 242, 247));
-        memoBg.setCornerRadius(dp(16));
-        memoPanel.setBackground(memoBg);
-        LinearLayout.LayoutParams memoParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        memoParams.setMargins(0, dp(10), 0, 0);
-        root.addView(memoPanel, memoParams);
-
-        selectedMemoTitle = new TextView(this);
-        selectedMemoTitle.setTextSize(16);
-        selectedMemoTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        selectedMemoTitle.setTextColor(Color.rgb(28, 28, 30));
-        memoPanel.addView(selectedMemoTitle, matchWrap());
-
-        selectedMemoContent = new TextView(this);
-        selectedMemoContent.setTextSize(13);
-        selectedMemoContent.setTextColor(Color.rgb(72, 72, 74));
-        selectedMemoContent.setPadding(0, dp(4), 0, 0);
-        memoPanel.addView(selectedMemoContent, matchWrap());
-
-        setContentView(scrollView);
     }
 
     private void changeMonth(int delta, boolean animate) {
@@ -238,38 +155,64 @@ public class MainActivity extends Activity {
         animateMonthTransition(delta, dragTranslation);
     }
 
+    private void prepareNeighborMonth(int delta) {
+        if (neighborDelta == delta && neighborCalendarGrid.getVisibility() == View.VISIBLE) return;
+        neighborDelta = delta;
+        renderMonthIntoGrid(neighborCalendarGrid, currentMonth.plusMonths(delta));
+        neighborCalendarGrid.setVisibility(View.VISIBLE);
+        float width = Math.max(1, calendarGrid.getWidth());
+        neighborCalendarGrid.setTranslationX(delta > 0 ? width : -width);
+    }
+
+    private void cancelMonthDrag(int delta, float dragTranslation) {
+        float width = Math.max(1, calendarGrid.getWidth());
+        calendarGrid.animate()
+                .translationX(0)
+                .setDuration(180)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
+        if (neighborCalendarGrid.getVisibility() == View.VISIBLE) {
+            neighborCalendarGrid.animate()
+                    .translationX(delta > 0 ? width : -width)
+                    .setDuration(180)
+                    .setInterpolator(new DecelerateInterpolator())
+                    .withEndAction(() -> neighborCalendarGrid.setVisibility(View.GONE))
+                    .start();
+        }
+    }
+
     private void animateMonthTransition(int delta, float startTranslation) {
         monthAnimating = true;
+        prepareNeighborMonth(delta);
         float width = Math.max(1, calendarGrid.getWidth());
         float outX = delta > 0 ? -width : width;
-        float inX = delta > 0 ? width : -width;
 
         calendarGrid.animate().cancel();
+        neighborCalendarGrid.animate().cancel();
         calendarGrid.setTranslationX(startTranslation);
-        calendarGrid.setAlpha(1f);
+        neighborCalendarGrid.setTranslationX((delta > 0 ? width : -width) + startTranslation);
 
         float remainingRatio = Math.abs(outX - startTranslation) / width;
-        long outDuration = Math.max(90L, (long) (210L * remainingRatio));
+        long duration = Math.max(120L, (long) (260L * remainingRatio));
 
         calendarGrid.animate()
                 .translationX(outX)
-                .alpha(0.96f)
-                .setDuration(outDuration)
+                .setDuration(duration)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
+        neighborCalendarGrid.animate()
+                .translationX(0)
+                .setDuration(duration)
                 .setInterpolator(new DecelerateInterpolator())
                 .withEndAction(() -> {
                     currentMonth = currentMonth.plusMonths(delta);
                     selectedDate = currentMonth.withDayOfMonth(1);
+                    calendarGrid.setTranslationX(0);
+                    neighborCalendarGrid.setTranslationX(0);
                     renderMonth();
                     updateSelectedMemoPanel(selectedDate);
-                    calendarGrid.setTranslationX(inX);
-                    calendarGrid.setAlpha(0.96f);
-                    calendarGrid.animate()
-                            .translationX(0)
-                            .alpha(1f)
-                            .setDuration(260)
-                            .setInterpolator(new DecelerateInterpolator())
-                            .withEndAction(() -> monthAnimating = false)
-                            .start();
+                    neighborCalendarGrid.setVisibility(View.GONE);
+                    monthAnimating = false;
                 })
                 .start();
     }
@@ -284,20 +227,8 @@ public class MainActivity extends Activity {
             baseInfoText.setText("주간 시작일 " + DateUtil.iso(baseDate) + " / 주→당→비 / 주간+휴일=주휴");
         }
 
-        calendarGrid.removeAllViews();
-        addWeekHeaders();
-
-        List<PeriodEvent> monthEvents = db.getEventsForMonth(currentMonth);
-        LocalDate firstDay = currentMonth.withDayOfMonth(1);
-        int startOffset = firstDay.getDayOfWeek().getValue() % 7;
-        LocalDate gridStart = firstDay.minusDays(startOffset);
-        LocalDate gridEnd = gridStart.plusDays(41);
-        Map<Long, Integer> eventLaneMap = buildEventLaneMap(monthEvents, gridStart, gridEnd);
-
-        for (int i = 0; i < 42; i++) {
-            LocalDate date = gridStart.plusDays(i);
-            calendarGrid.addView(createDayCell(date, monthEvents, eventLaneMap));
-        }
+        renderMonthIntoGrid(calendarGrid, currentMonth);
+        if (neighborCalendarGrid != null) neighborCalendarGrid.setVisibility(View.GONE);
 
         if (selectedDate == null || selectedDate.getYear() != currentMonth.getYear() ||
                 selectedDate.getMonthValue() != currentMonth.getMonthValue()) {
@@ -306,7 +237,24 @@ public class MainActivity extends Activity {
         updateSelectedMemoPanel(selectedDate);
     }
 
-    private void addWeekHeaders() {
+    private void renderMonthIntoGrid(GridLayout grid, LocalDate displayMonth) {
+        grid.removeAllViews();
+        addWeekHeaders(grid);
+
+        List<PeriodEvent> monthEvents = db.getEventsForMonth(displayMonth);
+        LocalDate firstDay = displayMonth.withDayOfMonth(1);
+        int startOffset = firstDay.getDayOfWeek().getValue() % 7;
+        LocalDate gridStart = firstDay.minusDays(startOffset);
+        LocalDate gridEnd = gridStart.plusDays(41);
+        Map<Long, Integer> eventLaneMap = buildEventLaneMap(monthEvents, gridStart, gridEnd);
+
+        for (int i = 0; i < 42; i++) {
+            LocalDate date = gridStart.plusDays(i);
+            grid.addView(createDayCell(date, monthEvents, eventLaneMap, displayMonth));
+        }
+    }
+
+    private void addWeekHeaders(GridLayout grid) {
         String[] headers = new String[]{"일", "월", "화", "수", "목", "금", "토"};
         for (int i = 0; i < headers.length; i++) {
             TextView tv = new TextView(this);
@@ -324,12 +272,12 @@ public class MainActivity extends Activity {
             params.height = LinearLayout.LayoutParams.WRAP_CONTENT;
             params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
             tv.setLayoutParams(params);
-            calendarGrid.addView(tv);
+            grid.addView(tv);
         }
     }
 
-    private View createDayCell(final LocalDate date, List<PeriodEvent> monthEvents, Map<Long, Integer> eventLaneMap) {
-        boolean inCurrentMonth = date.getMonthValue() == currentMonth.getMonthValue() && date.getYear() == currentMonth.getYear();
+    private View createDayCell(final LocalDate date, List<PeriodEvent> monthEvents, Map<Long, Integer> eventLaneMap, LocalDate displayMonth) {
+        boolean inCurrentMonth = date.getMonthValue() == displayMonth.getMonthValue() && date.getYear() == displayMonth.getYear();
         boolean isToday = date.equals(LocalDate.now());
         boolean isSelected = selectedDate != null && date.equals(selectedDate);
         boolean isHoliday = db.isHoliday(date);
@@ -1589,7 +1537,6 @@ public class MainActivity extends Activity {
 
     private void showSettingsDialog() {
         String[] items = new String[]{
-                "알람 관리",
                 "주간 시작일 설정",
                 "근무 종류 관리",
                 "휴일 수동 관리",
@@ -1599,11 +1546,10 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("설정")
                 .setItems(items, (dialog, which) -> {
-                    if (which == 0) showAlarmManager();
-                    else if (which == 1) showBaseDateDialog(false);
-                    else if (which == 2) showShiftTypesManager();
-                    else if (which == 3) showManualHolidayManager();
-                    else if (which == 4) showHolidayInfo();
+                    if (which == 0) showBaseDateDialog(false);
+                    else if (which == 1) showShiftTypesManager();
+                    else if (which == 2) showManualHolidayManager();
+                    else if (which == 3) showHolidayInfo();
                     else showAboutDialog();
                 })
                 .show();
@@ -1861,13 +1807,43 @@ public class MainActivity extends Activity {
     }
 
     private void addColorPickerViews(LinearLayout root, final int[] selectedColor, final TextView colorPreview) {
+        final int[] baseColor = new int[]{selectedColor[0]};
+        final TextView toneLabel = new TextView(this);
+        toneLabel.setTextSize(13);
+        toneLabel.setTextColor(Color.DKGRAY);
+        toneLabel.setGravity(Gravity.CENTER);
+
+        final SeekBar toneSeek = new SeekBar(this);
+        toneSeek.setMax(200);
+        toneSeek.setProgress(100);
+
+        final Runnable[] updateTone = new Runnable[1];
+        updateTone[0] = () -> {
+            selectedColor[0] = adjustColorTone(baseColor[0], toneSeek.getProgress());
+            updateColorPreview(colorPreview, selectedColor[0]);
+            toneLabel.setText(toneLabelText(toneSeek.getProgress()));
+        };
+
         Button noColorButton = new Button(this);
         noColorButton.setText("색상 없음");
         noColorButton.setOnClickListener(v -> {
-            selectedColor[0] = Color.TRANSPARENT;
-            updateColorPreview(colorPreview, selectedColor[0]);
+            baseColor[0] = Color.TRANSPARENT;
+            toneSeek.setProgress(100);
+            updateTone[0].run();
         });
         root.addView(noColorButton, matchWrap());
+
+        root.addView(toneLabel, matchWrap());
+        root.addView(toneSeek, matchWrap());
+        toneSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                updateTone[0].run();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+        });
 
         LinearLayout colorRow = new LinearLayout(this);
         colorRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1876,14 +1852,41 @@ public class MainActivity extends Activity {
             colorButton.setText(" ");
             colorButton.setBackground(makeRoundBackground(color, dp(8)));
             colorButton.setOnClickListener(v -> {
-                selectedColor[0] = color;
-                updateColorPreview(colorPreview, selectedColor[0]);
+                baseColor[0] = color;
+                toneSeek.setProgress(100);
+                updateTone[0].run();
             });
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(46), 1);
             cp.setMargins(dp(2), dp(6), dp(2), dp(2));
             colorRow.addView(colorButton, cp);
         }
         root.addView(colorRow, matchWrap());
+        updateTone[0].run();
+    }
+
+    private int adjustColorTone(int baseColor, int level) {
+        if (isNoColor(baseColor)) return Color.TRANSPARENT;
+        level = Math.max(0, Math.min(200, level));
+        if (level == 100) return baseColor;
+        if (level < 100) {
+            float factor = level / 100f;
+            return Color.rgb(
+                    Math.round(Color.red(baseColor) * factor),
+                    Math.round(Color.green(baseColor) * factor),
+                    Math.round(Color.blue(baseColor) * factor));
+        }
+        float factor = (level - 100) / 100f;
+        return Color.rgb(
+                Math.round(Color.red(baseColor) + (255 - Color.red(baseColor)) * factor),
+                Math.round(Color.green(baseColor) + (255 - Color.green(baseColor)) * factor),
+                Math.round(Color.blue(baseColor) + (255 - Color.blue(baseColor)) * factor));
+    }
+
+    private String toneLabelText(int level) {
+        int value = level - 100;
+        if (value == 0) return "색상 농도: 기본";
+        if (value < 0) return "색상 농도: " + (-value) + "% 진하게";
+        return "색상 농도: " + value + "% 옅게";
     }
 
     private void updateColorPreview(TextView preview, int color) {
@@ -2122,7 +2125,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.12-snooze-shift-edit\n\n" +
+        String message = "3교대 달력알람 v0.13-main-ui-color-snooze\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
