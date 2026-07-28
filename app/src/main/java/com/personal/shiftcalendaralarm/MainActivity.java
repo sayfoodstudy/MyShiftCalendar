@@ -946,8 +946,8 @@ public class MainActivity extends Activity {
             toggle.setText(alarm.enabled ? "끄기" : "켜기");
         });
         edit.setOnClickListener(v -> {
-            if (AlarmItem.MODE_SHIFT.equals(alarm.alarmMode)) showEditShiftAlarmDialog(alarm, title, desc);
-            else showEditBasicAlarmDialog(alarm, title, desc);
+            if (AlarmItem.MODE_SHIFT.equals(alarm.alarmMode)) showEditShiftAlarmDialog(alarm, title, desc, toggle);
+            else showEditBasicAlarmDialog(alarm, title, desc, toggle);
         });
         delete.setOnClickListener(v -> confirmDeleteAlarm(alarm, root, box));
     }
@@ -1127,7 +1127,7 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void showEditBasicAlarmDialog(final AlarmItem alarm, final TextView rowTitle, final TextView rowDesc) {
+    private void showEditBasicAlarmDialog(final AlarmItem alarm, final TextView rowTitle, final TextView rowDesc, final Button rowToggle) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(10), dp(18), 0);
@@ -1188,7 +1188,7 @@ public class MainActivity extends Activity {
                             titleInput.getText().toString().trim(),
                             memoInput.getText().toString().trim(),
                             AlarmItem.MODE_BASIC,
-                            alarm.enabled,
+                            true,
                             hour,
                             minute,
                             selectedDate[0],
@@ -1197,15 +1197,15 @@ public class MainActivity extends Activity {
                             AlarmItem.HOLIDAY_ANY,
                             AlarmItem.WEEKDAY_ALL_MASK,
                             true);
-                    if (alarm.enabled) AlarmScheduler.scheduleAlarm(this, alarm.id);
-                    refreshAlarmRowAfterEdit(alarm, rowTitle, rowDesc);
+                    AlarmScheduler.scheduleAlarm(this, alarm.id);
+                    refreshAlarmRowAfterEdit(alarm, rowTitle, rowDesc, rowToggle);
                     Toast.makeText(this, "알람을 수정했습니다.", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("취소", null)
                 .show();
     }
 
-    private void showEditShiftAlarmDialog(final AlarmItem alarm, final TextView rowTitle, final TextView rowDesc) {
+    private void showEditShiftAlarmDialog(final AlarmItem alarm, final TextView rowTitle, final TextView rowDesc, final Button rowToggle) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(10), dp(18), 0);
@@ -1277,7 +1277,7 @@ public class MainActivity extends Activity {
                             titleInput.getText().toString().trim(),
                             memoInput.getText().toString().trim(),
                             AlarmItem.MODE_SHIFT,
-                            alarm.enabled,
+                            true,
                             hour,
                             minute,
                             startDate[0],
@@ -1286,15 +1286,15 @@ public class MainActivity extends Activity {
                             holidayFilter[0],
                             weekdayMask[0],
                             true);
-                    if (alarm.enabled) AlarmScheduler.scheduleAlarm(this, alarm.id);
-                    refreshAlarmRowAfterEdit(alarm, rowTitle, rowDesc);
+                    AlarmScheduler.scheduleAlarm(this, alarm.id);
+                    refreshAlarmRowAfterEdit(alarm, rowTitle, rowDesc, rowToggle);
                     Toast.makeText(this, "조건 알람을 수정했습니다.", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("취소", null)
                 .show();
     }
 
-    private void refreshAlarmRowAfterEdit(AlarmItem alarm, TextView rowTitle, TextView rowDesc) {
+    private void refreshAlarmRowAfterEdit(AlarmItem alarm, TextView rowTitle, TextView rowDesc, Button rowToggle) {
         AlarmItem updated = db.getAlarm(alarm.id);
         if (updated == null) return;
         alarm.title = updated.title;
@@ -1313,6 +1313,7 @@ public class MainActivity extends Activity {
         rowTitle.setText((alarm.enabled ? "● " : "○ ") + alarm.title);
         rowTitle.setTextColor(alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY);
         rowDesc.setText(describeAlarm(alarm));
+        rowToggle.setText(alarm.enabled ? "끄기" : "켜기");
     }
 
     private void showRepeatPicker(final String[] repeatType, final Button button) {
@@ -1696,34 +1697,48 @@ public class MainActivity extends Activity {
         row.setPadding(0, dp(5), 0, dp(5));
 
         TextView badge = new TextView(this);
-        badge.setText(type.displayShortName());
-        badge.setTextColor(contrastTextColor(type.color));
         badge.setGravity(Gravity.CENTER);
         badge.setTypeface(Typeface.DEFAULT_BOLD);
-        badge.setBackground(makeRoundBackground(type.color, dp(6)));
+        applyShiftBadgeStyle(badge, type);
         row.addView(badge, new LinearLayout.LayoutParams(dp(44), dp(34)));
 
         TextView info = new TextView(this);
-        String fixed = type.isDefault ? "기본" : "사용자";
-        info.setText(type.name + "  /  " + type.category + "  /  " + fixed + describeShiftConditionShort(type));
+        updateShiftTypeInfoText(info, type);
         info.setTextSize(14);
         info.setPadding(dp(8), 0, dp(8), 0);
         row.addView(info, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        Button editButton = new Button(this);
+        editButton.setText("수정");
+        editButton.setTextSize(12);
+        editButton.setOnClickListener(v -> showEditShiftTypeDialog(type, badge, info));
+        row.addView(editButton, new LinearLayout.LayoutParams(dp(62), LinearLayout.LayoutParams.WRAP_CONTENT));
 
         if (!type.isDefault) {
             Button conditionButton = new Button(this);
             conditionButton.setText("조건");
             conditionButton.setTextSize(12);
             conditionButton.setOnClickListener(v -> showShiftTypeConditionDialog(type));
-            row.addView(conditionButton, new LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT));
+            row.addView(conditionButton, new LinearLayout.LayoutParams(dp(62), LinearLayout.LayoutParams.WRAP_CONTENT));
 
             Button deleteButton = new Button(this);
             deleteButton.setText("삭제");
             deleteButton.setTextSize(12);
             deleteButton.setOnClickListener(v -> confirmDeleteShiftType(type, root, row));
-            row.addView(deleteButton, new LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT));
+            row.addView(deleteButton, new LinearLayout.LayoutParams(dp(62), LinearLayout.LayoutParams.WRAP_CONTENT));
         }
         root.addView(row, matchWrap());
+    }
+
+    private void applyShiftBadgeStyle(TextView badge, ShiftType type) {
+        badge.setText(type.displayShortName());
+        badge.setTextColor(contrastTextColor(type.color));
+        badge.setBackground(makeRoundBackground(type.color, dp(6)));
+    }
+
+    private void updateShiftTypeInfoText(TextView info, ShiftType type) {
+        String fixed = type.isDefault ? "기본" : "사용자";
+        info.setText(type.name + "  /  " + type.category + "  /  " + fixed + describeShiftConditionShort(type));
     }
 
     private String describeShiftConditionShort(ShiftType type) {
@@ -1785,6 +1800,103 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void showEditShiftTypeDialog(final ShiftType type, final TextView badge, final TextView info) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(10), dp(18), 0);
+
+        final EditText nameInput = new EditText(this);
+        nameInput.setHint("근무 이름");
+        nameInput.setSingleLine(true);
+        nameInput.setText(type.name);
+        root.addView(nameInput, matchWrap());
+
+        final EditText shortInput = new EditText(this);
+        shortInput.setHint("짧은 표시 예: 주간, 당직, 휴일당직");
+        shortInput.setSingleLine(true);
+        shortInput.setText(type.shortName);
+        root.addView(shortInput, matchWrap());
+
+        final EditText categoryInput = new EditText(this);
+        categoryInput.setHint("분류 예: 근무, 휴무, 기타");
+        categoryInput.setSingleLine(true);
+        categoryInput.setText(type.category);
+        root.addView(categoryInput, matchWrap());
+
+        final int[] selectedColor = new int[]{type.color};
+        final TextView colorPreview = new TextView(this);
+        colorPreview.setGravity(Gravity.CENTER);
+        colorPreview.setPadding(0, dp(8), 0, dp(8));
+        updateColorPreview(colorPreview, selectedColor[0]);
+        root.addView(colorPreview, matchWrap());
+
+        addColorPickerViews(root, selectedColor, colorPreview);
+
+        new AlertDialog.Builder(this)
+                .setTitle(type.name + " 수정")
+                .setView(wrapInScrollView(root))
+                .setPositiveButton("저장", (dialog, which) -> {
+                    String name = nameInput.getText().toString().trim();
+                    String shortName = shortInput.getText().toString().trim();
+                    String category = categoryInput.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        Toast.makeText(this, "근무 이름을 입력하세요.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (shortName.isEmpty()) shortName = name.substring(0, Math.min(2, name.length()));
+                    if (category.isEmpty()) category = "기타";
+                    db.updateShiftTypeDetails(type.id, name, shortName, category, selectedColor[0]);
+                    type.name = name;
+                    type.shortName = shortName;
+                    type.category = category;
+                    type.color = selectedColor[0];
+                    applyShiftBadgeStyle(badge, type);
+                    updateShiftTypeInfoText(info, type);
+                    renderMonth();
+                    AlarmScheduler.scheduleAllEnabled(this);
+                    Toast.makeText(this, "근무 종류를 수정했습니다.", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void addColorPickerViews(LinearLayout root, final int[] selectedColor, final TextView colorPreview) {
+        Button noColorButton = new Button(this);
+        noColorButton.setText("색상 없음");
+        noColorButton.setOnClickListener(v -> {
+            selectedColor[0] = Color.TRANSPARENT;
+            updateColorPreview(colorPreview, selectedColor[0]);
+        });
+        root.addView(noColorButton, matchWrap());
+
+        LinearLayout colorRow = new LinearLayout(this);
+        colorRow.setOrientation(LinearLayout.HORIZONTAL);
+        for (int color : eventPalette) {
+            Button colorButton = new Button(this);
+            colorButton.setText(" ");
+            colorButton.setBackground(makeRoundBackground(color, dp(8)));
+            colorButton.setOnClickListener(v -> {
+                selectedColor[0] = color;
+                updateColorPreview(colorPreview, selectedColor[0]);
+            });
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(46), 1);
+            cp.setMargins(dp(2), dp(6), dp(2), dp(2));
+            colorRow.addView(colorButton, cp);
+        }
+        root.addView(colorRow, matchWrap());
+    }
+
+    private void updateColorPreview(TextView preview, int color) {
+        if (isNoColor(color)) {
+            preview.setText("선택된 색상: 없음");
+            preview.setTextColor(Color.rgb(72, 72, 74));
+        } else {
+            preview.setText("선택된 색상");
+            preview.setTextColor(contrastTextColor(color));
+        }
+        preview.setBackground(makeRoundBackground(color, dp(6)));
+    }
+
     private void showAddShiftTypeDialog() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1808,28 +1920,11 @@ public class MainActivity extends Activity {
 
         final int[] selectedColor = new int[]{eventPalette[1]};
         final TextView colorPreview = new TextView(this);
-        colorPreview.setText("선택된 색상");
         colorPreview.setGravity(Gravity.CENTER);
-        colorPreview.setTextColor(Color.WHITE);
-        colorPreview.setBackground(makeRoundBackground(selectedColor[0], dp(6)));
         colorPreview.setPadding(0, dp(8), 0, dp(8));
+        updateColorPreview(colorPreview, selectedColor[0]);
         root.addView(colorPreview, matchWrap());
-
-        LinearLayout colorRow = new LinearLayout(this);
-        colorRow.setOrientation(LinearLayout.HORIZONTAL);
-        for (int color : eventPalette) {
-            Button colorButton = new Button(this);
-            colorButton.setText(" ");
-            colorButton.setBackground(makeRoundBackground(color, dp(8)));
-            colorButton.setOnClickListener(v -> {
-                selectedColor[0] = color;
-                colorPreview.setBackground(makeRoundBackground(selectedColor[0], dp(6)));
-            });
-            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(46), 1);
-            cp.setMargins(dp(2), dp(6), dp(2), dp(2));
-            colorRow.addView(colorButton, cp);
-        }
-        root.addView(colorRow, matchWrap());
+        addColorPickerViews(root, selectedColor, colorPreview);
 
         new AlertDialog.Builder(this)
                 .setTitle("근무 종류 추가")
@@ -1843,7 +1938,7 @@ public class MainActivity extends Activity {
                         showShiftTypesManager();
                         return;
                     }
-                    if (shortName.isEmpty()) shortName = name.substring(0, Math.min(1, name.length()));
+                    if (shortName.isEmpty()) shortName = name.substring(0, Math.min(2, name.length()));
                     if (category.isEmpty()) category = "기타";
                     db.addShiftType(name, shortName, selectedColor[0], category);
                     Toast.makeText(this, "근무 종류를 추가했습니다.", Toast.LENGTH_SHORT).show();
@@ -2027,7 +2122,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.11-feedback-time-wheel\n\n" +
+        String message = "3교대 달력알람 v0.12-snooze-shift-edit\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
@@ -2078,7 +2173,12 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private boolean isNoColor(int color) {
+        return Color.alpha(color) == 0;
+    }
+
     private int fadeColor(int color) {
+        if (isNoColor(color)) return Color.TRANSPARENT;
         int r = (int) (Color.red(color) * 0.25f + 255 * 0.75f);
         int g = (int) (Color.green(color) * 0.25f + 255 * 0.75f);
         int b = (int) (Color.blue(color) * 0.25f + 255 * 0.75f);
@@ -2088,18 +2188,29 @@ public class MainActivity extends Activity {
     private GradientDrawable makeCircleBackground(int color) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.OVAL);
-        drawable.setColor(color);
+        if (isNoColor(color)) {
+            drawable.setColor(Color.TRANSPARENT);
+            drawable.setStroke(1, Color.rgb(229, 229, 234));
+        } else {
+            drawable.setColor(color);
+        }
         return drawable;
     }
 
     private GradientDrawable makeRoundBackground(int color, int radius) {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
         drawable.setCornerRadius(radius);
+        if (isNoColor(color)) {
+            drawable.setColor(Color.TRANSPARENT);
+            drawable.setStroke(1, Color.rgb(210, 210, 215));
+        } else {
+            drawable.setColor(color);
+        }
         return drawable;
     }
 
     private int contrastTextColor(int backgroundColor) {
+        if (isNoColor(backgroundColor)) return Color.rgb(45, 45, 48);
         int r = Color.red(backgroundColor);
         int g = Color.green(backgroundColor);
         int b = Color.blue(backgroundColor);
