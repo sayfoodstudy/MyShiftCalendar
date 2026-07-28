@@ -13,7 +13,7 @@ import java.util.List;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "shift_calendar_alarm.db";
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 5;
 
     public static final String SETTING_BASE_DATE = "base_day_shift_date";
 
@@ -35,6 +35,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "name TEXT NOT NULL, " +
                 "short_name TEXT NOT NULL, " +
                 "color INTEGER NOT NULL, " +
+                "base_color INTEGER NOT NULL DEFAULT 0, " +
+                "color_tone INTEGER NOT NULL DEFAULT 100, " +
                 "category TEXT NOT NULL, " +
                 "is_default INTEGER NOT NULL, " +
                 "alarm_enabled INTEGER NOT NULL, " +
@@ -68,6 +70,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             addShiftConditionColumns(db);
             createCustomHolidaysTable(db);
         }
+        if (oldVersion < 5) {
+            addShiftColorToneColumns(db);
+        }
         if (oldVersion < 2) {
             updateDefaultShiftTypes(db);
         }
@@ -81,6 +86,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         try { db.execSQL("ALTER TABLE shift_types ADD COLUMN condition_base_shift_type_id INTEGER NOT NULL DEFAULT -1"); } catch (Exception ignored) { }
         try { db.execSQL("ALTER TABLE shift_types ADD COLUMN condition_holiday_filter INTEGER NOT NULL DEFAULT 0"); } catch (Exception ignored) { }
         try { db.execSQL("ALTER TABLE shift_types ADD COLUMN condition_weekday_mask INTEGER NOT NULL DEFAULT 127"); } catch (Exception ignored) { }
+    }
+
+    private void addShiftColorToneColumns(SQLiteDatabase db) {
+        try { db.execSQL("ALTER TABLE shift_types ADD COLUMN base_color INTEGER NOT NULL DEFAULT 0"); } catch (Exception ignored) { }
+        try { db.execSQL("ALTER TABLE shift_types ADD COLUMN color_tone INTEGER NOT NULL DEFAULT 100"); } catch (Exception ignored) { }
+        try { db.execSQL("UPDATE shift_types SET base_color=color WHERE base_color=0 AND color!=0"); } catch (Exception ignored) { }
+        try { db.execSQL("UPDATE shift_types SET color_tone=100 WHERE color_tone<=0"); } catch (Exception ignored) { }
     }
 
     private void createAlarmsTable(SQLiteDatabase db) {
@@ -129,6 +141,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put("name", name);
         values.put("short_name", shortName);
         values.put("color", color);
+        values.put("base_color", color);
+        values.put("color_tone", 100);
         values.put("category", category);
         values.put("is_default", 1);
         values.put("alarm_enabled", 1);
@@ -147,6 +161,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put("name", name);
         values.put("short_name", shortName);
         values.put("color", color);
+        values.put("base_color", color);
+        values.put("color_tone", 100);
         values.put("category", category);
         values.put("is_default", isDefault ? 1 : 0);
         values.put("alarm_enabled", alarmEnabled ? 1 : 0);
@@ -233,6 +249,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 cursor.getString(cursor.getColumnIndexOrThrow("name")),
                 cursor.getString(cursor.getColumnIndexOrThrow("short_name")),
                 cursor.getInt(cursor.getColumnIndexOrThrow("color")),
+                cursor.getInt(cursor.getColumnIndexOrThrow("base_color")),
+                cursor.getInt(cursor.getColumnIndexOrThrow("color_tone")),
                 cursor.getString(cursor.getColumnIndexOrThrow("category")),
                 cursor.getInt(cursor.getColumnIndexOrThrow("is_default")) == 1,
                 cursor.getInt(cursor.getColumnIndexOrThrow("alarm_enabled")) == 1,
@@ -244,14 +262,20 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         );
     }
 
-    public long addShiftType(String name, String shortName, int color, String category) {
+    public long addShiftType(String name, String shortName, int color, int baseColor, int colorTone, String category) {
         SQLiteDatabase db = getWritableDatabase();
         int sortOrder = getNextShiftTypeSortOrder(db);
         String code = "CUSTOM_" + System.currentTimeMillis();
-        return insertShiftType(db, code, name, shortName, color, category, false, true, sortOrder);
+        long id = insertShiftType(db, code, name, shortName, color, category, false, true, sortOrder);
+        ContentValues values = new ContentValues();
+        values.put("base_color", baseColor);
+        values.put("color_tone", colorTone);
+        db.update("shift_types", values, "id=?", new String[]{String.valueOf(id)});
+        return id;
     }
 
-    public void updateShiftTypeDetails(long id, String name, String shortName, String category, int color) {
+    public void updateShiftTypeDetails(long id, String name, String shortName, String category,
+                                       int color, int baseColor, int colorTone) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues values = new ContentValues();
         values.put("name", name == null || name.trim().isEmpty() ? "근무" : name.trim());
@@ -259,6 +283,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 (name == null || name.trim().isEmpty() ? "근" : name.trim().substring(0, Math.min(2, name.trim().length()))) : shortName.trim());
         values.put("category", category == null || category.trim().isEmpty() ? "기타" : category.trim());
         values.put("color", color);
+        values.put("base_color", baseColor);
+        values.put("color_tone", colorTone);
         db.update("shift_types", values, "id=?", new String[]{String.valueOf(id)});
     }
 
