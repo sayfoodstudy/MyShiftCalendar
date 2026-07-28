@@ -6,6 +6,8 @@ public class ShiftType {
     public String name;
     public String shortName;
     public int color;
+    public int baseColor;
+    public int colorTone;
     public String category;
     public boolean isDefault;
     public boolean alarmEnabled;
@@ -16,14 +18,16 @@ public class ShiftType {
     public int conditionWeekdayMask;
 
     public ShiftType(long id, String code, String name, String shortName, int color,
-                     String category, boolean isDefault, boolean alarmEnabled, int sortOrder,
-                     boolean autoConditionEnabled, long conditionBaseShiftTypeId,
-                     int conditionHolidayFilter, int conditionWeekdayMask) {
+                     int baseColor, int colorTone, String category, boolean isDefault,
+                     boolean alarmEnabled, int sortOrder, boolean autoConditionEnabled,
+                     long conditionBaseShiftTypeId, int conditionHolidayFilter, int conditionWeekdayMask) {
         this.id = id;
         this.code = code;
         this.name = name;
         this.shortName = shortName;
         this.color = color;
+        this.baseColor = baseColor;
+        this.colorTone = colorTone;
         this.category = category;
         this.isDefault = isDefault;
         this.alarmEnabled = alarmEnabled;
