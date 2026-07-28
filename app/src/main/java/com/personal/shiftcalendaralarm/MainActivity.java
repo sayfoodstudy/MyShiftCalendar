@@ -929,16 +929,25 @@ public class MainActivity extends Activity {
                 db.updateAlarmEnabled(alarm.id, false);
                 db.updateAlarmNextTrigger(alarm.id, -1L);
                 AlarmScheduler.cancelAlarm(this, alarm.id);
-                Toast.makeText(this, "알람을 껐습니다. 알람 관리 창을 닫고 다시 열면 반영됩니다.", Toast.LENGTH_SHORT).show();
+                alarm.enabled = false;
+                alarm.nextTriggerMillis = -1L;
+                Toast.makeText(this, "알람을 껐습니다.", Toast.LENGTH_SHORT).show();
             } else {
                 db.updateAlarmEnabled(alarm.id, true);
+                alarm.enabled = true;
                 AlarmScheduler.scheduleAlarm(this, alarm.id);
-                Toast.makeText(this, "알람을 켰습니다. 알람 관리 창을 닫고 다시 열면 반영됩니다.", Toast.LENGTH_SHORT).show();
+                AlarmItem updated = db.getAlarm(alarm.id);
+                if (updated != null) alarm.nextTriggerMillis = updated.nextTriggerMillis;
+                Toast.makeText(this, "알람을 켰습니다.", Toast.LENGTH_SHORT).show();
             }
+            title.setText((alarm.enabled ? "● " : "○ ") + alarm.title);
+            title.setTextColor(alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY);
+            desc.setText(describeAlarm(alarm));
+            toggle.setText(alarm.enabled ? "끄기" : "켜기");
         });
         edit.setOnClickListener(v -> {
-            if (AlarmItem.MODE_SHIFT.equals(alarm.alarmMode)) showEditShiftAlarmDialog(alarm);
-            else showEditBasicAlarmDialog(alarm);
+            if (AlarmItem.MODE_SHIFT.equals(alarm.alarmMode)) showEditShiftAlarmDialog(alarm, title, desc);
+            else showEditBasicAlarmDialog(alarm, title, desc);
         });
         delete.setOnClickListener(v -> confirmDeleteAlarm(alarm, root, box));
     }
@@ -1118,7 +1127,7 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void showEditBasicAlarmDialog(final AlarmItem alarm) {
+    private void showEditBasicAlarmDialog(final AlarmItem alarm, final TextView rowTitle, final TextView rowDesc) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(10), dp(18), 0);
@@ -1189,13 +1198,14 @@ public class MainActivity extends Activity {
                             AlarmItem.WEEKDAY_ALL_MASK,
                             true);
                     if (alarm.enabled) AlarmScheduler.scheduleAlarm(this, alarm.id);
-                    Toast.makeText(this, "알람을 수정했습니다. 알람 관리 창을 닫고 다시 열면 반영됩니다.", Toast.LENGTH_LONG).show();
+                    refreshAlarmRowAfterEdit(alarm, rowTitle, rowDesc);
+                    Toast.makeText(this, "알람을 수정했습니다.", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("취소", null)
                 .show();
     }
 
-    private void showEditShiftAlarmDialog(final AlarmItem alarm) {
+    private void showEditShiftAlarmDialog(final AlarmItem alarm, final TextView rowTitle, final TextView rowDesc) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(10), dp(18), 0);
@@ -1277,10 +1287,32 @@ public class MainActivity extends Activity {
                             weekdayMask[0],
                             true);
                     if (alarm.enabled) AlarmScheduler.scheduleAlarm(this, alarm.id);
-                    Toast.makeText(this, "조건 알람을 수정했습니다. 알람 관리 창을 닫고 다시 열면 반영됩니다.", Toast.LENGTH_LONG).show();
+                    refreshAlarmRowAfterEdit(alarm, rowTitle, rowDesc);
+                    Toast.makeText(this, "조건 알람을 수정했습니다.", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("취소", null)
                 .show();
+    }
+
+    private void refreshAlarmRowAfterEdit(AlarmItem alarm, TextView rowTitle, TextView rowDesc) {
+        AlarmItem updated = db.getAlarm(alarm.id);
+        if (updated == null) return;
+        alarm.title = updated.title;
+        alarm.memo = updated.memo;
+        alarm.alarmMode = updated.alarmMode;
+        alarm.enabled = updated.enabled;
+        alarm.hour = updated.hour;
+        alarm.minute = updated.minute;
+        alarm.startDate = updated.startDate;
+        alarm.repeatType = updated.repeatType;
+        alarm.shiftTypeId = updated.shiftTypeId;
+        alarm.holidayFilter = updated.holidayFilter;
+        alarm.weekdayMask = updated.weekdayMask;
+        alarm.vibrate = updated.vibrate;
+        alarm.nextTriggerMillis = updated.nextTriggerMillis;
+        rowTitle.setText((alarm.enabled ? "● " : "○ ") + alarm.title);
+        rowTitle.setTextColor(alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY);
+        rowDesc.setText(describeAlarm(alarm));
     }
 
     private void showRepeatPicker(final String[] repeatType, final Button button) {
@@ -1688,7 +1720,7 @@ public class MainActivity extends Activity {
             Button deleteButton = new Button(this);
             deleteButton.setText("삭제");
             deleteButton.setTextSize(12);
-            deleteButton.setOnClickListener(v -> confirmDeleteShiftType(type));
+            deleteButton.setOnClickListener(v -> confirmDeleteShiftType(type, root, row));
             row.addView(deleteButton, new LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT));
         }
         root.addView(row, matchWrap());
@@ -1822,7 +1854,7 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void confirmDeleteShiftType(final ShiftType type) {
+    private void confirmDeleteShiftType(final ShiftType type, final LinearLayout listRoot, final View rowView) {
         if (db.isShiftTypeUsed(type.id)) {
             new AlertDialog.Builder(this)
                     .setTitle("삭제 불가")
@@ -1836,8 +1868,12 @@ public class MainActivity extends Activity {
                 .setMessage("'" + type.name + "' 근무 종류를 삭제할까요?")
                 .setPositiveButton("삭제", (dialog, which) -> {
                     boolean deleted = db.deleteCustomShiftType(type.id);
-                    Toast.makeText(this, deleted ? "삭제했습니다. 근무 종류 관리 창을 닫고 다시 열면 반영됩니다." : "삭제하지 못했습니다.", Toast.LENGTH_SHORT).show();
-                    renderMonth();
+                    if (deleted) {
+                        listRoot.removeView(rowView);
+                        renderMonth();
+                        AlarmScheduler.scheduleAllEnabled(this);
+                    }
+                    Toast.makeText(this, deleted ? "삭제했습니다." : "삭제하지 못했습니다.", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("취소", null)
                 .show();
@@ -1991,7 +2027,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.10-time-wheel\n\n" +
+        String message = "3교대 달력알람 v0.11-feedback-time-wheel\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
