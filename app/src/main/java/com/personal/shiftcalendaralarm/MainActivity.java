@@ -92,6 +92,124 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void buildMainLayout() {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setBackgroundColor(Color.WHITE);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.WHITE);
+        root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), dp(8));
+        scrollView.addView(root);
+
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
+        topRow.setPadding(0, 0, 0, dp(4));
+        root.addView(topRow, matchWrap());
+
+        TextView appTitle = new TextView(this);
+        appTitle.setText("3교대달력");
+        appTitle.setTextSize(24);
+        appTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        appTitle.setTextColor(Color.rgb(28, 28, 30));
+        appTitle.setGravity(Gravity.CENTER_VERTICAL);
+        topRow.addView(appTitle, new LinearLayout.LayoutParams(0, dp(38), 1));
+
+        Button alarmButton = makeCompactButton("⏰");
+        alarmButton.setTextSize(18);
+        alarmButton.setOnClickListener(v -> showAlarmManager());
+        topRow.addView(alarmButton, new LinearLayout.LayoutParams(dp(42), dp(34)));
+
+        Button settingsButton = makeCompactButton("설정");
+        settingsButton.setOnClickListener(v -> showSettingsDialog());
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(54), dp(34));
+        settingsParams.setMargins(dp(5), 0, 0, 0);
+        topRow.addView(settingsButton, settingsParams);
+
+        LinearLayout navRow = new LinearLayout(this);
+        navRow.setOrientation(LinearLayout.HORIZONTAL);
+        navRow.setGravity(Gravity.CENTER_VERTICAL);
+        navRow.setPadding(0, 0, 0, dp(4));
+        root.addView(navRow, matchWrap());
+
+        Button prevButton = makeCompactButton("<");
+        prevButton.setOnClickListener(v -> changeMonth(-1, true));
+        navRow.addView(prevButton, new LinearLayout.LayoutParams(dp(38), dp(34)));
+
+        monthTitle = new TextView(this);
+        monthTitle.setTextSize(21);
+        monthTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        monthTitle.setGravity(Gravity.CENTER);
+        monthTitle.setSingleLine(true);
+        monthTitle.setTextColor(Color.rgb(28, 28, 30));
+        navRow.addView(monthTitle, new LinearLayout.LayoutParams(0, dp(34), 1));
+
+        Button todayButton = makeCompactButton("오늘");
+        todayButton.setOnClickListener(v -> {
+            selectedDate = LocalDate.now();
+            currentMonth = selectedDate.withDayOfMonth(1);
+            renderMonth();
+            updateSelectedMemoPanel(selectedDate);
+        });
+        navRow.addView(todayButton, new LinearLayout.LayoutParams(dp(52), dp(34)));
+
+        Button nextButton = makeCompactButton(">");
+        nextButton.setOnClickListener(v -> changeMonth(1, true));
+        LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(dp(38), dp(34));
+        nextParams.setMargins(dp(4), 0, 0, 0);
+        navRow.addView(nextButton, nextParams);
+
+        baseInfoText = new TextView(this);
+        baseInfoText.setTextSize(11);
+        baseInfoText.setSingleLine(true);
+        baseInfoText.setTextColor(Color.rgb(142, 142, 147));
+        baseInfoText.setPadding(dp(3), 0, dp(3), dp(4));
+        root.addView(baseInfoText, matchWrap());
+
+        calendarFrame = new FrameLayout(this);
+        root.addView(calendarFrame, matchWrap());
+
+        calendarGrid = new GridLayout(this);
+        calendarGrid.setColumnCount(7);
+        calendarGrid.setUseDefaultMargins(false);
+        calendarFrame.addView(calendarGrid, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        neighborCalendarGrid = new GridLayout(this);
+        neighborCalendarGrid.setColumnCount(7);
+        neighborCalendarGrid.setUseDefaultMargins(false);
+        neighborCalendarGrid.setVisibility(View.GONE);
+        calendarFrame.addView(neighborCalendarGrid, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        memoPanel = new LinearLayout(this);
+        memoPanel.setOrientation(LinearLayout.VERTICAL);
+        memoPanel.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable memoBg = new GradientDrawable();
+        memoBg.setColor(Color.rgb(242, 242, 247));
+        memoBg.setCornerRadius(dp(16));
+        memoPanel.setBackground(memoBg);
+        LinearLayout.LayoutParams memoParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        memoParams.setMargins(0, dp(10), 0, 0);
+        root.addView(memoPanel, memoParams);
+
+        selectedMemoTitle = new TextView(this);
+        selectedMemoTitle.setTextSize(16);
+        selectedMemoTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        selectedMemoTitle.setTextColor(Color.rgb(28, 28, 30));
+        memoPanel.addView(selectedMemoTitle, matchWrap());
+
+        selectedMemoContent = new TextView(this);
+        selectedMemoContent.setTextSize(13);
+        selectedMemoContent.setTextColor(Color.rgb(72, 72, 74));
+        selectedMemoContent.setPadding(0, dp(4), 0, 0);
+        memoPanel.addView(selectedMemoContent, matchWrap());
+
+        setContentView(scrollView);
+    }
+
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         if (calendarGrid == null || neighborCalendarGrid == null) return super.dispatchTouchEvent(event);
