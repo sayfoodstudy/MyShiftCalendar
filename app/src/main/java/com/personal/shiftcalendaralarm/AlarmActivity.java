@@ -136,13 +136,31 @@ public class AlarmActivity extends Activity {
         snoozeButton.setOnTouchListener((v, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 snoozeSwipeStartX = event.getX();
-            } else if (event.getAction() == MotionEvent.ACTION_UP) {
+                v.animate().cancel();
+            } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                float dx = event.getX() - snoozeSwipeStartX;
+                v.setTranslationX(dx * 0.35f);
+                v.setAlpha(1f - Math.min(0.30f, Math.abs(dx) / Math.max(1f, v.getWidth()) * 0.55f));
+                return true;
+            } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
                 float dx = event.getX() - snoozeSwipeStartX;
                 if (Math.abs(dx) > dp(45)) {
-                    if (dx < 0) snoozeIndex = (snoozeIndex + 1) % snoozeOptions.length;
-                    else snoozeIndex = (snoozeIndex - 1 + snoozeOptions.length) % snoozeOptions.length;
-                    ((Button) v).setText(snoozeLabel());
+                    int direction = dx < 0 ? -1 : 1;
+                    v.animate()
+                            .translationX(direction * dp(90))
+                            .alpha(0.35f)
+                            .setDuration(90)
+                            .withEndAction(() -> {
+                                if (direction < 0) snoozeIndex = (snoozeIndex + 1) % snoozeOptions.length;
+                                else snoozeIndex = (snoozeIndex - 1 + snoozeOptions.length) % snoozeOptions.length;
+                                ((Button) v).setText(snoozeLabel());
+                                v.setTranslationX(-direction * dp(90));
+                                v.animate().translationX(0).alpha(1f).setDuration(140).start();
+                            })
+                            .start();
                     return true;
+                } else {
+                    v.animate().translationX(0).alpha(1f).setDuration(120).start();
                 }
             }
             return false;
