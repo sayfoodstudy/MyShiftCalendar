@@ -1,5 +1,5 @@
-[README.md](https://github.com/user-attachments/files/30438423/README.md)
-# 3교대 달력알람 v0.10-time-wheel
+[README.md](https://github.com/user-attachments/files/30440017/README.md)
+# 3교대 달력알람 v0.11-feedback-time-wheel
 
 개인용 Android 네이티브 앱입니다. 3교대 달력 기능에 기본 알람과 3교대 조건 알람을 추가한 버전입니다.
 
