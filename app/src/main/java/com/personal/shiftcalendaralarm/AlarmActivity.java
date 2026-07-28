@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -24,6 +25,9 @@ import java.util.Locale;
 public class AlarmActivity extends Activity {
     private long alarmId;
     private AlarmItem alarm;
+    private final int[] snoozeOptions = new int[]{5, 10, 30, 60};
+    private int snoozeIndex = 0;
+    private float snoozeSwipeStartX;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,12 +124,35 @@ public class AlarmActivity extends Activity {
         memoText.setPadding(0, 0, 0, dp(26));
         card.addView(memoText, matchWrap());
 
-        Button snoozeButton = makeIosButton("5분 뒤 다시 알림", Color.rgb(242, 242, 247), Color.rgb(0, 122, 255));
+        TextView snoozeGuide = new TextView(this);
+        snoozeGuide.setText("다시 알림 버튼을 좌우로 밀면 5분/10분/30분/1시간으로 변경됩니다.");
+        snoozeGuide.setTextSize(12);
+        snoozeGuide.setGravity(Gravity.CENTER);
+        snoozeGuide.setTextColor(Color.rgb(142, 142, 147));
+        snoozeGuide.setPadding(0, 0, 0, dp(6));
+        card.addView(snoozeGuide, matchWrap());
+
+        Button snoozeButton = makeIosButton(snoozeLabel(), Color.rgb(242, 242, 247), Color.rgb(0, 122, 255));
+        snoozeButton.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                snoozeSwipeStartX = event.getX();
+            } else if (event.getAction() == MotionEvent.ACTION_UP) {
+                float dx = event.getX() - snoozeSwipeStartX;
+                if (Math.abs(dx) > dp(45)) {
+                    if (dx < 0) snoozeIndex = (snoozeIndex + 1) % snoozeOptions.length;
+                    else snoozeIndex = (snoozeIndex - 1 + snoozeOptions.length) % snoozeOptions.length;
+                    ((Button) v).setText(snoozeLabel());
+                    return true;
+                }
+            }
+            return false;
+        });
         snoozeButton.setOnClickListener(v -> {
+            int minutes = snoozeOptions[snoozeIndex];
             if (alarmId > 0) {
-                long next = System.currentTimeMillis() + 5 * 60_000L;
+                long next = System.currentTimeMillis() + minutes * 60_000L;
                 AlarmScheduler.scheduleSnooze(this, alarmId, next);
-                Toast.makeText(this, "5분 뒤 다시 알림을 예약했습니다.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, snoozeText(minutes) + " 뒤 다시 알림을 예약했습니다.", Toast.LENGTH_SHORT).show();
             }
             stopAlarmService();
             cancelNotification();
@@ -142,6 +169,15 @@ public class AlarmActivity extends Activity {
         card.addView(stopButton, matchWrapWithTopMargin(dp(10)));
 
         setContentView(root);
+    }
+
+    private String snoozeLabel() {
+        return snoozeText(snoozeOptions[snoozeIndex]) + " 뒤 다시 알림";
+    }
+
+    private String snoozeText(int minutes) {
+        if (minutes >= 60) return (minutes / 60) + "시간";
+        return minutes + "분";
     }
 
     private Button makeIosButton(String text, int bgColor, int textColor) {
