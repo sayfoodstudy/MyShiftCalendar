@@ -7,6 +7,7 @@ import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -226,28 +227,28 @@ public class MainActivity extends Activity {
             if (!monthAnimating) {
                 float dx = event.getX() - swipeStartX;
                 float dy = event.getY() - swipeStartY;
-                if (monthDragging || (Math.abs(dx) > dp(26) && Math.abs(dx) > Math.abs(dy) * 1.45f)) {
+                if (monthDragging || (Math.abs(dy) > dp(26) && Math.abs(dy) > Math.abs(dx) * 1.45f)) {
                     monthDragging = true;
-                    float width = Math.max(1, calendarGrid.getWidth());
-                    float dragX = dx * 0.86f;
-                    int delta = dragX < 0 ? 1 : -1;
+                    float height = Math.max(1, calendarGrid.getHeight());
+                    float dragY = dy * 0.86f;
+                    int delta = dragY < 0 ? 1 : -1;
                     prepareNeighborMonth(delta);
-                    calendarGrid.setTranslationX(dragX);
-                    neighborCalendarGrid.setTranslationX((delta > 0 ? width : -width) + dragX);
+                    calendarGrid.setTranslationY(dragY);
+                    neighborCalendarGrid.setTranslationY((delta > 0 ? height : -height) + dragY);
                     return true;
                 }
             }
         } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
             if (monthDragging) {
-                float dx = event.getX() - swipeStartX;
-                float dragX = dx * 0.86f;
+                float dy = event.getY() - swipeStartY;
+                float dragY = dy * 0.86f;
                 int threshold = dp(120);
                 long now = System.currentTimeMillis();
-                if (Math.abs(dx) > threshold && now - lastMonthSwipeTime > 350) {
+                if (Math.abs(dy) > threshold && now - lastMonthSwipeTime > 350) {
                     lastMonthSwipeTime = now;
-                    changeMonthFromDrag(dx < 0 ? 1 : -1, dragX);
+                    changeMonthFromDrag(dy < 0 ? 1 : -1, dragY);
                 } else {
-                    cancelMonthDrag(dragX < 0 ? 1 : -1, dragX);
+                    cancelMonthDrag(dragY < 0 ? 1 : -1, dragY);
                 }
                 monthDragging = false;
                 return true;
@@ -278,20 +279,21 @@ public class MainActivity extends Activity {
         neighborDelta = delta;
         renderMonthIntoGrid(neighborCalendarGrid, currentMonth.plusMonths(delta));
         neighborCalendarGrid.setVisibility(View.VISIBLE);
-        float width = Math.max(1, calendarGrid.getWidth());
-        neighborCalendarGrid.setTranslationX(delta > 0 ? width : -width);
+        float height = Math.max(1, calendarGrid.getHeight());
+        neighborCalendarGrid.setTranslationY(delta > 0 ? height : -height);
+        neighborCalendarGrid.setTranslationX(0);
     }
 
     private void cancelMonthDrag(int delta, float dragTranslation) {
-        float width = Math.max(1, calendarGrid.getWidth());
+        float height = Math.max(1, calendarGrid.getHeight());
         calendarGrid.animate()
-                .translationX(0)
+                .translationY(0)
                 .setDuration(180)
                 .setInterpolator(new DecelerateInterpolator())
                 .start();
         if (neighborCalendarGrid.getVisibility() == View.VISIBLE) {
             neighborCalendarGrid.animate()
-                    .translationX(delta > 0 ? width : -width)
+                    .translationY(delta > 0 ? height : -height)
                     .setDuration(180)
                     .setInterpolator(new DecelerateInterpolator())
                     .withEndAction(() -> neighborCalendarGrid.setVisibility(View.GONE))
@@ -302,31 +304,35 @@ public class MainActivity extends Activity {
     private void animateMonthTransition(int delta, float startTranslation) {
         monthAnimating = true;
         prepareNeighborMonth(delta);
-        float width = Math.max(1, calendarGrid.getWidth());
-        float outX = delta > 0 ? -width : width;
+        float height = Math.max(1, calendarGrid.getHeight());
+        float outY = delta > 0 ? -height : height;
 
         calendarGrid.animate().cancel();
         neighborCalendarGrid.animate().cancel();
-        calendarGrid.setTranslationX(startTranslation);
-        neighborCalendarGrid.setTranslationX((delta > 0 ? width : -width) + startTranslation);
+        calendarGrid.setTranslationY(startTranslation);
+        neighborCalendarGrid.setTranslationY((delta > 0 ? height : -height) + startTranslation);
+        calendarGrid.setTranslationX(0);
+        neighborCalendarGrid.setTranslationX(0);
 
-        float remainingRatio = Math.abs(outX - startTranslation) / width;
+        float remainingRatio = Math.abs(outY - startTranslation) / height;
         long duration = Math.max(120L, (long) (260L * remainingRatio));
 
         calendarGrid.animate()
-                .translationX(outX)
+                .translationY(outY)
                 .setDuration(duration)
                 .setInterpolator(new DecelerateInterpolator())
                 .start();
         neighborCalendarGrid.animate()
-                .translationX(0)
+                .translationY(0)
                 .setDuration(duration)
                 .setInterpolator(new DecelerateInterpolator())
                 .withEndAction(() -> {
                     currentMonth = currentMonth.plusMonths(delta);
                     selectedDate = currentMonth.withDayOfMonth(1);
                     calendarGrid.setTranslationX(0);
+                    calendarGrid.setTranslationY(0);
                     neighborCalendarGrid.setTranslationX(0);
+                    neighborCalendarGrid.setTranslationY(0);
                     renderMonth();
                     updateSelectedMemoPanel(selectedDate);
                     neighborCalendarGrid.setVisibility(View.GONE);
@@ -430,8 +436,9 @@ public class MainActivity extends Activity {
 
         TextView dateText = new TextView(this);
         dateText.setText(String.valueOf(date.getDayOfMonth()));
-        dateText.setTextSize(10);
-        dateText.setTypeface(Typeface.DEFAULT_BOLD);
+        dateText.setTextSize(isToday ? 12 : 10);
+        dateText.setTypeface(isToday ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        if (isToday) dateText.setPaintFlags(dateText.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
         dateText.setGravity(Gravity.CENTER);
         if (!inCurrentMonth) dateText.setTextColor(Color.rgb(190, 190, 195));
         else if (isHoliday || date.getDayOfWeek() == DayOfWeek.SUNDAY) dateText.setTextColor(Color.rgb(255, 59, 48));
@@ -1888,13 +1895,15 @@ public class MainActivity extends Activity {
         root.addView(categoryInput, matchWrap());
 
         final int[] selectedColor = new int[]{type.color};
+        final int[] selectedBaseColor = new int[]{type.baseColor};
+        final int[] selectedTone = new int[]{type.colorTone};
         final TextView colorPreview = new TextView(this);
         colorPreview.setGravity(Gravity.CENTER);
         colorPreview.setPadding(0, dp(8), 0, dp(8));
         updateColorPreview(colorPreview, selectedColor[0]);
         root.addView(colorPreview, matchWrap());
 
-        addColorPickerViews(root, selectedColor, colorPreview);
+        addColorPickerViews(root, selectedColor, selectedBaseColor, selectedTone, colorPreview);
 
         new AlertDialog.Builder(this)
                 .setTitle(type.name + " 수정")
@@ -1909,11 +1918,13 @@ public class MainActivity extends Activity {
                     }
                     if (shortName.isEmpty()) shortName = name.substring(0, Math.min(2, name.length()));
                     if (category.isEmpty()) category = "기타";
-                    db.updateShiftTypeDetails(type.id, name, shortName, category, selectedColor[0]);
+                    db.updateShiftTypeDetails(type.id, name, shortName, category, selectedColor[0], selectedBaseColor[0], selectedTone[0]);
                     type.name = name;
                     type.shortName = shortName;
                     type.category = category;
                     type.color = selectedColor[0];
+                    type.baseColor = selectedBaseColor[0];
+                    type.colorTone = selectedTone[0];
                     applyShiftBadgeStyle(badge, type);
                     updateShiftTypeInfoText(info, type);
                     renderMonth();
@@ -1924,8 +1935,9 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void addColorPickerViews(LinearLayout root, final int[] selectedColor, final TextView colorPreview) {
-        final int[] baseColor = new int[]{selectedColor[0]};
+    private void addColorPickerViews(LinearLayout root, final int[] selectedColor,
+                                     final int[] selectedBaseColor, final int[] selectedTone,
+                                     final TextView colorPreview) {
         final TextView toneLabel = new TextView(this);
         toneLabel.setTextSize(13);
         toneLabel.setTextColor(Color.DKGRAY);
@@ -1933,19 +1945,20 @@ public class MainActivity extends Activity {
 
         final SeekBar toneSeek = new SeekBar(this);
         toneSeek.setMax(200);
-        toneSeek.setProgress(100);
+        toneSeek.setProgress(Math.max(0, Math.min(200, selectedTone[0])));
 
         final Runnable[] updateTone = new Runnable[1];
         updateTone[0] = () -> {
-            selectedColor[0] = adjustColorTone(baseColor[0], toneSeek.getProgress());
+            selectedTone[0] = toneSeek.getProgress();
+            selectedColor[0] = adjustColorTone(selectedBaseColor[0], selectedTone[0]);
             updateColorPreview(colorPreview, selectedColor[0]);
-            toneLabel.setText(toneLabelText(toneSeek.getProgress()));
+            toneLabel.setText(toneLabelText(selectedTone[0]));
         };
 
         Button noColorButton = new Button(this);
         noColorButton.setText("색상 없음");
         noColorButton.setOnClickListener(v -> {
-            baseColor[0] = Color.TRANSPARENT;
+            selectedBaseColor[0] = Color.TRANSPARENT;
             toneSeek.setProgress(100);
             updateTone[0].run();
         });
@@ -1970,7 +1983,7 @@ public class MainActivity extends Activity {
             colorButton.setText(" ");
             colorButton.setBackground(makeRoundBackground(color, dp(8)));
             colorButton.setOnClickListener(v -> {
-                baseColor[0] = color;
+                selectedBaseColor[0] = color;
                 toneSeek.setProgress(100);
                 updateTone[0].run();
             });
@@ -2040,12 +2053,14 @@ public class MainActivity extends Activity {
         root.addView(categoryInput, matchWrap());
 
         final int[] selectedColor = new int[]{eventPalette[1]};
+        final int[] selectedBaseColor = new int[]{eventPalette[1]};
+        final int[] selectedTone = new int[]{100};
         final TextView colorPreview = new TextView(this);
         colorPreview.setGravity(Gravity.CENTER);
         colorPreview.setPadding(0, dp(8), 0, dp(8));
         updateColorPreview(colorPreview, selectedColor[0]);
         root.addView(colorPreview, matchWrap());
-        addColorPickerViews(root, selectedColor, colorPreview);
+        addColorPickerViews(root, selectedColor, selectedBaseColor, selectedTone, colorPreview);
 
         new AlertDialog.Builder(this)
                 .setTitle("근무 종류 추가")
@@ -2061,7 +2076,7 @@ public class MainActivity extends Activity {
                     }
                     if (shortName.isEmpty()) shortName = name.substring(0, Math.min(2, name.length()));
                     if (category.isEmpty()) category = "기타";
-                    db.addShiftType(name, shortName, selectedColor[0], category);
+                    db.addShiftType(name, shortName, selectedColor[0], selectedBaseColor[0], selectedTone[0], category);
                     Toast.makeText(this, "근무 종류를 추가했습니다.", Toast.LENGTH_SHORT).show();
                     renderMonth();
                     showShiftTypesManager();
