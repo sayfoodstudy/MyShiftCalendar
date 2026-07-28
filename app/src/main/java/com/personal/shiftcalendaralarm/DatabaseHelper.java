@@ -251,6 +251,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return insertShiftType(db, code, name, shortName, color, category, false, true, sortOrder);
     }
 
+    public void updateShiftTypeDetails(long id, String name, String shortName, String category, int color) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("name", name == null || name.trim().isEmpty() ? "근무" : name.trim());
+        values.put("short_name", shortName == null || shortName.trim().isEmpty() ?
+                (name == null || name.trim().isEmpty() ? "근" : name.trim().substring(0, Math.min(2, name.trim().length()))) : shortName.trim());
+        values.put("category", category == null || category.trim().isEmpty() ? "기타" : category.trim());
+        values.put("color", color);
+        db.update("shift_types", values, "id=?", new String[]{String.valueOf(id)});
+    }
+
     public void updateShiftTypeCondition(long id, boolean enabled, long baseShiftTypeId,
                                          int holidayFilter, int weekdayMask) {
         SQLiteDatabase db = getWritableDatabase();
