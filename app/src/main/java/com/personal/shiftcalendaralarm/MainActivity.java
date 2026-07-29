@@ -438,14 +438,22 @@ public class MainActivity extends Activity {
         dateText.setText(String.valueOf(date.getDayOfMonth()));
         dateText.setTextSize(isToday ? 12 : 10);
         dateText.setTypeface(isToday ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-        if (isToday) dateText.setPaintFlags(dateText.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
         dateText.setGravity(Gravity.CENTER);
         if (!inCurrentMonth) dateText.setTextColor(Color.rgb(190, 190, 195));
         else if (isHoliday || date.getDayOfWeek() == DayOfWeek.SUNDAY) dateText.setTextColor(Color.rgb(255, 59, 48));
         else if (date.getDayOfWeek() == DayOfWeek.SATURDAY) dateText.setTextColor(Color.rgb(0, 122, 255));
         else dateText.setTextColor(Color.rgb(28, 28, 30));
         cell.addView(dateText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(13)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(15)));
+
+        if (isToday) {
+            View todayUnderline = new View(this);
+            todayUnderline.setBackgroundColor(inCurrentMonth ? Color.rgb(0, 122, 255) : Color.rgb(150, 150, 155));
+            LinearLayout.LayoutParams underlineParams = new LinearLayout.LayoutParams(dp(16), dp(2));
+            underlineParams.gravity = Gravity.CENTER_HORIZONTAL;
+            underlineParams.setMargins(0, 0, 0, dp(1));
+            cell.addView(todayUnderline, underlineParams);
+        }
 
         ShiftResult result = calculateShift(date);
         if (result.finalShift != null) {
