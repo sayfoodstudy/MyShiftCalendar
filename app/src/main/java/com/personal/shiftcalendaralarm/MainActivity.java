@@ -814,7 +814,11 @@ public class MainActivity extends Activity {
         delete.setTextSize(12);
         row.addView(delete, new LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        edit.setOnClickListener(v -> showEditEventDialog(event, selectedDate));
+        edit.setOnClickListener(v -> showEditEventDialog(event, selectedDate, () -> {
+            String memoPartUpdated = event.memo == null || event.memo.trim().isEmpty() ? "" : "\n" + event.memo;
+            text.setText(event.title + "\n" + DateUtil.iso(event.startDate) + " ~ " + DateUtil.iso(event.endDate) + memoPartUpdated);
+            colorView.setBackgroundColor(event.color);
+        }));
         delete.setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("기간 일정 삭제")
                 .setMessage("'" + event.title + "' 일정을 삭제할까요?")
