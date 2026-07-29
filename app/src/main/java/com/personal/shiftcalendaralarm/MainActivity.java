@@ -371,10 +371,11 @@ public class MainActivity extends Activity {
         LocalDate gridStart = firstDay.minusDays(startOffset);
         LocalDate gridEnd = gridStart.plusDays(41);
         Map<Long, Integer> eventLaneMap = buildEventLaneMap(monthEvents, gridStart, gridEnd);
+        int eventLaneCount = calculateEventLaneCount(eventLaneMap);
 
         for (int i = 0; i < 42; i++) {
             LocalDate date = gridStart.plusDays(i);
-            grid.addView(createDayCell(date, monthEvents, eventLaneMap, displayMonth));
+            grid.addView(createDayCell(date, monthEvents, eventLaneMap, displayMonth, eventLaneCount));
         }
     }
 
@@ -400,12 +401,13 @@ public class MainActivity extends Activity {
         }
     }
 
-    private View createDayCell(final LocalDate date, List<PeriodEvent> monthEvents, Map<Long, Integer> eventLaneMap, LocalDate displayMonth) {
+    private View createDayCell(final LocalDate date, List<PeriodEvent> monthEvents, Map<Long, Integer> eventLaneMap, LocalDate displayMonth, int eventLaneCount) {
         boolean inCurrentMonth = date.getMonthValue() == displayMonth.getMonthValue() && date.getYear() == displayMonth.getYear();
         boolean isToday = date.equals(LocalDate.now());
         boolean isSelected = selectedDate != null && date.equals(selectedDate);
         boolean isHoliday = db.isHoliday(date);
-        String publicHolidayName = db.getHolidayLabel(date);
+        String publicHolidayName = db.getCustomHolidayName(date);
+        if (publicHolidayName == null) publicHolidayName = HolidayProvider.getPublicHolidayName(date);
 
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
@@ -429,7 +431,7 @@ public class MainActivity extends Activity {
         });
         GridLayout.LayoutParams params = new GridLayout.LayoutParams();
         params.width = 0;
-        params.height = dp(74);
+        params.height = dp(80);
         params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
         params.setMargins(0, 0, 0, 0);
         cell.setLayoutParams(params);
@@ -446,14 +448,12 @@ public class MainActivity extends Activity {
         cell.addView(dateText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(15)));
 
-        if (isToday) {
-            View todayUnderline = new View(this);
-            todayUnderline.setBackgroundColor(inCurrentMonth ? Color.rgb(0, 122, 255) : Color.rgb(150, 150, 155));
-            LinearLayout.LayoutParams underlineParams = new LinearLayout.LayoutParams(dp(16), dp(2));
-            underlineParams.gravity = Gravity.CENTER_HORIZONTAL;
-            underlineParams.setMargins(0, 0, 0, dp(1));
-            cell.addView(todayUnderline, underlineParams);
-        }
+        View todayUnderline = new View(this);
+        todayUnderline.setBackgroundColor(isToday ? (inCurrentMonth ? Color.rgb(0, 122, 255) : Color.rgb(150, 150, 155)) : Color.TRANSPARENT);
+        LinearLayout.LayoutParams underlineParams = new LinearLayout.LayoutParams(dp(16), dp(2));
+        underlineParams.gravity = Gravity.CENTER_HORIZONTAL;
+        underlineParams.setMargins(0, 0, 0, dp(1));
+        cell.addView(todayUnderline, underlineParams);
 
         ShiftResult result = calculateShift(date);
         if (result.finalShift != null) {
@@ -462,17 +462,17 @@ public class MainActivity extends Activity {
             shiftBadge.setText(result.finalShift.displayShortName());
             shiftBadge.setSingleLine(true);
             shiftBadge.setGravity(Gravity.CENTER);
-            shiftBadge.setTextSize(14);
+            shiftBadge.setTextSize(12.5f);
             shiftBadge.setTypeface(Typeface.DEFAULT_BOLD);
             shiftBadge.setTextColor(inCurrentMonth ? Color.rgb(45, 45, 48) : Color.rgb(150, 150, 155));
             shiftBadge.setBackground(makeCircleBackground(badgeColor));
-            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(30), dp(30));
             badgeParams.gravity = Gravity.CENTER_HORIZONTAL;
             badgeParams.setMargins(0, 0, 0, 0);
             cell.addView(shiftBadge, badgeParams);
             shiftBadge.post(() -> {
-                int size = (int) (cell.getWidth() * 0.70f);
-                if (size > dp(30)) {
+                int size = (int) (cell.getWidth() * 0.56f);
+                if (size > dp(24)) {
                     LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) shiftBadge.getLayoutParams();
                     lp.width = size;
                     lp.height = size;
@@ -497,22 +497,22 @@ public class MainActivity extends Activity {
         cell.addView(spacer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
-        PeriodEvent[] laneEvents = new PeriodEvent[3];
-        int hiddenEventCount = 0;
-        boolean hasAnyVisibleOrHiddenEvent = false;
-        for (PeriodEvent event : monthEvents) {
-            if (!event.covers(date)) continue;
-            hasAnyVisibleOrHiddenEvent = true;
-            Integer lane = eventLaneMap.get(event.id);
-            if (lane != null && lane >= 0 && lane < 3) {
-                laneEvents[lane] = event;
-            } else {
-                hiddenEventCount++;
+        int renderLaneCount = Math.min(eventLaneCount, 6);
+        if (renderLaneCount > 0) {
+            PeriodEvent[] laneEvents = new PeriodEvent[renderLaneCount];
+            for (PeriodEvent event : monthEvents) {
+                if (!event.covers(date)) continue;
+                Integer lane = eventLaneMap.get(event.id);
+                if (lane != null && lane >= 0 && lane < renderLaneCount) {
+                    laneEvents[lane] = event;
+                }
             }
-        }
 
-        if (hasAnyVisibleOrHiddenEvent) {
-            for (int lane = 0; lane < 3; lane++) {
+            LinearLayout eventArea = new LinearLayout(this);
+            eventArea.setOrientation(LinearLayout.VERTICAL);
+            eventArea.setGravity(Gravity.BOTTOM);
+            int barHeight = lineBarHeightForLaneCount(renderLaneCount);
+            for (int lane = 0; lane < renderLaneCount; lane++) {
                 View bar = new View(this);
                 if (laneEvents[lane] != null) {
                     int barColor = inCurrentMonth ? laneEvents[lane].color : fadeColor(laneEvents[lane].color);
@@ -521,19 +521,12 @@ public class MainActivity extends Activity {
                     bar.setBackgroundColor(Color.TRANSPARENT);
                 }
                 LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
-                barParams.setMargins(0, dp(1), 0, 0);
-                cell.addView(bar, barParams);
+                        LinearLayout.LayoutParams.MATCH_PARENT, dp(barHeight));
+                barParams.setMargins(0, lane == 0 ? 0 : dp(1), 0, 0);
+                eventArea.addView(bar, barParams);
             }
-        }
-        if (hiddenEventCount > 0) {
-            TextView more = new TextView(this);
-            more.setText("+" + hiddenEventCount);
-            more.setTextSize(7);
-            more.setGravity(Gravity.CENTER);
-            more.setTextColor(inCurrentMonth ? Color.rgb(99, 99, 102) : Color.LTGRAY);
-            cell.addView(more, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(9)));
+            cell.addView(eventArea, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
         }
         return cell;
     }
@@ -574,6 +567,20 @@ public class MainActivity extends Activity {
             result.put(event.id, assignedLane);
         }
         return result;
+    }
+
+    private int calculateEventLaneCount(Map<Long, Integer> eventLaneMap) {
+        int maxLane = -1;
+        for (Integer lane : eventLaneMap.values()) {
+            if (lane != null && lane > maxLane) maxLane = lane;
+        }
+        return Math.max(0, maxLane + 1);
+    }
+
+    private int lineBarHeightForLaneCount(int laneCount) {
+        if (laneCount <= 3) return 4;
+        if (laneCount == 4) return 3;
+        return 2;
     }
 
     private void updateSelectedMemoPanel(LocalDate date) {
