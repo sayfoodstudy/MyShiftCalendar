@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -60,6 +61,9 @@ public class MainActivity extends Activity {
     private LinearLayout memoPanel;
     private TextView selectedMemoTitle;
     private TextView selectedMemoContent;
+    private LimitedHeightScrollView memoContentScroll;
+    private LinearLayout selectedMemoList;
+    private boolean touchStartedInCalendar;
 
     private final int[] eventPalette = new int[]{
             Color.rgb(255, 59, 48),
@@ -202,11 +206,25 @@ public class MainActivity extends Activity {
         selectedMemoTitle.setTextColor(Color.rgb(28, 28, 30));
         memoPanel.addView(selectedMemoTitle, matchWrap());
 
+        memoContentScroll = new LimitedHeightScrollView(this, dp(150));
+        memoContentScroll.setFillViewport(false);
+        memoContentScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        memoContentScroll.setOnTouchListener((v, event) -> {
+            v.getParent().requestDisallowInterceptTouchEvent(true);
+            if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                v.getParent().requestDisallowInterceptTouchEvent(false);
+            }
+            return false;
+        });
+
+        selectedMemoList = new LinearLayout(this);
+        selectedMemoList.setOrientation(LinearLayout.VERTICAL);
+        selectedMemoList.setPadding(0, dp(4), 0, 0);
+        memoContentScroll.addView(selectedMemoList, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        memoPanel.addView(memoContentScroll, matchWrap());
+
         selectedMemoContent = new TextView(this);
-        selectedMemoContent.setTextSize(13);
-        selectedMemoContent.setTextColor(Color.rgb(72, 72, 74));
-        selectedMemoContent.setPadding(0, dp(4), 0, 0);
-        memoPanel.addView(selectedMemoContent, matchWrap());
 
         setContentView(scrollView);
     }
@@ -218,12 +236,14 @@ public class MainActivity extends Activity {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             swipeStartX = event.getX();
             swipeStartY = event.getY();
+            touchStartedInCalendar = isTouchInsideView(calendarFrame, event);
             monthDragging = false;
-            if (!monthAnimating) {
+            if (!monthAnimating && touchStartedInCalendar) {
                 calendarGrid.animate().cancel();
                 neighborCalendarGrid.animate().cancel();
             }
         } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
+            if (!touchStartedInCalendar) return super.dispatchTouchEvent(event);
             if (!monthAnimating) {
                 float dx = event.getX() - swipeStartX;
                 float dy = event.getY() - swipeStartY;
@@ -239,6 +259,7 @@ public class MainActivity extends Activity {
                 }
             }
         } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+            if (!touchStartedInCalendar) return super.dispatchTouchEvent(event);
             if (monthDragging) {
                 float dy = event.getY() - swipeStartY;
                 float dragY = dy * 0.86f;
@@ -584,42 +605,103 @@ public class MainActivity extends Activity {
     }
 
     private void updateSelectedMemoPanel(LocalDate date) {
-        if (selectedMemoTitle == null || selectedMemoContent == null || date == null) return;
+        if (selectedMemoTitle == null || selectedMemoList == null || date == null) return;
 
         ShiftResult shift = calculateShift(date);
         List<PeriodEvent> events = db.getEventsForDate(date);
 
         selectedMemoTitle.setText(date.format(DateUtil.KOREAN_DATE));
+        selectedMemoList.removeAllViews();
 
-        StringBuilder sb = new StringBuilder();
         if (shift.finalShift != null) {
-            sb.append("근무: ").append(shift.finalShift.name);
-            if (shift.manualOverride) sb.append(" (수동 변경)");
-            sb.append("\n");
+            TextView shiftLine = makeMemoText("근무: " + shift.finalShift.name + (shift.manualOverride ? " (수동 변경)" : ""), 13, Color.rgb(72, 72, 74), false);
+            selectedMemoList.addView(shiftLine, matchWrap());
         }
         if (shift.holidayLabel != null) {
-            sb.append("휴일: ").append(shift.holidayLabel).append("\n");
+            TextView holidayLine = makeMemoText("휴일: " + shift.holidayLabel, 13, Color.rgb(255, 59, 48), false);
+            selectedMemoList.addView(holidayLine, matchWrap());
         }
 
         if (events.isEmpty()) {
-            sb.append("메모/일정 없음\n");
-            sb.append("살짝 누르면 이 영역에 메모가 표시되고, 두 번 누르면 근무 변경/일정 추가로 들어갑니다.");
+            selectedMemoList.addView(makeMemoText("메모/일정 없음", 13, Color.GRAY, false), matchWrap());
+            selectedMemoList.addView(makeMemoText("살짝 누르면 이 영역에 메모가 표시되고, 두 번 누르면 근무 변경/일정 추가로 들어갑니다.", 12, Color.GRAY, false), matchWrap());
         } else {
-            sb.append("메모/일정\n");
+            selectedMemoList.addView(makeMemoText("메모/기간일정", 13, Color.rgb(28, 28, 30), true), matchWrap());
             for (PeriodEvent event : events) {
-                sb.append("• ").append(event.title)
-                        .append("  ")
-                        .append(DateUtil.iso(event.startDate))
-                        .append("~")
-                        .append(DateUtil.iso(event.endDate));
-                if (event.memo != null && !event.memo.trim().isEmpty()) {
-                    sb.append("\n  ").append(event.memo.trim());
-                }
-                sb.append("\n");
+                addMainEventRow(selectedMemoList, event, date);
             }
-            sb.append("\n두 번 누르면 근무 변경/일정 추가.");
         }
-        selectedMemoContent.setText(sb.toString().trim());
+    }
+
+    private TextView makeMemoText(String text, int sp, int color, boolean bold) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(sp);
+        tv.setTextColor(color);
+        tv.setPadding(0, dp(2), 0, dp(2));
+        if (bold) tv.setTypeface(Typeface.DEFAULT_BOLD);
+        return tv;
+    }
+
+    private void addMainEventRow(LinearLayout parent, final PeriodEvent event, final LocalDate selectedDate) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, dp(5), 0, dp(5));
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        View colorBar = new View(this);
+        colorBar.setBackgroundColor(event.color);
+        LinearLayout.LayoutParams colorParams = new LinearLayout.LayoutParams(dp(5), dp(28));
+        colorParams.setMargins(0, 0, dp(7), 0);
+        titleRow.addView(colorBar, colorParams);
+
+        TextView title = makeMemoText(event.title, 14, Color.rgb(28, 28, 30), true);
+        title.setSingleLine(true);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        String range = formatEventDateRange(event);
+        if (!range.isEmpty()) {
+            TextView rangeText = makeMemoText(range, 12, Color.rgb(142, 142, 147), false);
+            rangeText.setGravity(Gravity.RIGHT);
+            titleRow.addView(rangeText, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+        box.addView(titleRow, matchWrap());
+
+        if (event.memo != null && !event.memo.trim().isEmpty()) {
+            TextView memo = makeMemoText(event.memo.trim(), 12, Color.rgb(72, 72, 74), false);
+            memo.setPadding(dp(12), 0, 0, dp(2));
+            box.addView(memo, matchWrap());
+        }
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.RIGHT);
+
+        Button edit = new Button(this);
+        edit.setText("수정");
+        edit.setTextSize(12);
+        actions.addView(edit, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        Button delete = new Button(this);
+        delete.setText("삭제");
+        delete.setTextSize(12);
+        actions.addView(delete, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
+        box.addView(actions, matchWrap());
+
+        edit.setOnClickListener(v -> showEditEventDialog(event, selectedDate));
+        delete.setOnClickListener(v -> confirmDeleteEvent(event, selectedDate));
+
+        parent.addView(box, matchWrap());
+    }
+
+    private String formatEventDateRange(PeriodEvent event) {
+        if (event.startDate.equals(event.endDate)) return "";
+        return String.format(Locale.KOREAN, "%02d.%02d-%02d.%02d",
+                event.startDate.getMonthValue(), event.startDate.getDayOfMonth(),
+                event.endDate.getMonthValue(), event.endDate.getDayOfMonth());
     }
 
     private List<PeriodEvent> eventsCovering(LocalDate date, List<PeriodEvent> events) {
@@ -722,12 +804,29 @@ public class MainActivity extends Activity {
         text.setPadding(dp(8), 0, dp(8), 0);
         row.addView(text, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
+        Button edit = new Button(this);
+        edit.setText("수정");
+        edit.setTextSize(12);
+        row.addView(edit, new LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT));
+
         Button delete = new Button(this);
         delete.setText("삭제");
         delete.setTextSize(12);
-        row.addView(delete, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
+        row.addView(delete, new LinearLayout.LayoutParams(dp(66), LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        delete.setOnClickListener(v -> confirmDeleteEvent(event, selectedDate));
+        edit.setOnClickListener(v -> showEditEventDialog(event, selectedDate));
+        delete.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("기간 일정 삭제")
+                .setMessage("'" + event.title + "' 일정을 삭제할까요?")
+                .setPositiveButton("삭제", (dialog, which) -> {
+                    db.deletePeriodEvent(event.id);
+                    root.removeView(row);
+                    renderMonth();
+                    updateSelectedMemoPanel(selectedDate);
+                    Toast.makeText(this, "삭제했습니다.", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("취소", null)
+                .show());
         root.addView(row, matchWrap());
     }
 
@@ -848,6 +947,115 @@ public class MainActivity extends Activity {
                     db.addPeriodEvent(title, startDate[0], endDate[0], selectedColor[0], memo);
                     Toast.makeText(this, "기간 일정을 추가했습니다.", Toast.LENGTH_SHORT).show();
                     renderMonth();
+                    updateSelectedMemoPanel(selectedDate);
+                })
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void showEditEventDialog(final PeriodEvent event, final LocalDate selectedDate) {
+        showEditEventDialog(event, selectedDate, null);
+    }
+
+    private void showEditEventDialog(final PeriodEvent event, final LocalDate selectedDate, final Runnable afterSave) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(10), dp(18), 0);
+
+        final EditText titleInput = new EditText(this);
+        titleInput.setHint("일정 제목");
+        titleInput.setSingleLine(true);
+        titleInput.setText(event.title);
+        root.addView(titleInput, matchWrap());
+
+        final LocalDate[] startDate = new LocalDate[]{event.startDate};
+        final LocalDate[] endDate = new LocalDate[]{event.endDate};
+
+        final TextView startText = new TextView(this);
+        startText.setText("시작: " + DateUtil.iso(startDate[0]));
+        startText.setTextSize(15);
+        root.addView(startText, matchWrap());
+
+        Button startButton = new Button(this);
+        startButton.setText("시작 날짜 선택");
+        startButton.setOnClickListener(v -> pickDate(startDate[0], picked -> {
+            startDate[0] = picked;
+            startText.setText("시작: " + DateUtil.iso(startDate[0]));
+        }));
+        root.addView(startButton, matchWrap());
+
+        final TextView endText = new TextView(this);
+        endText.setText("종료: " + DateUtil.iso(endDate[0]));
+        endText.setTextSize(15);
+        root.addView(endText, matchWrap());
+
+        Button endButton = new Button(this);
+        endButton.setText("종료 날짜 선택");
+        endButton.setOnClickListener(v -> pickDate(endDate[0], picked -> {
+            endDate[0] = picked;
+            endText.setText("종료: " + DateUtil.iso(endDate[0]));
+        }));
+        root.addView(endButton, matchWrap());
+
+        final EditText memoInput = new EditText(this);
+        memoInput.setHint("메모 선택사항");
+        memoInput.setMinLines(2);
+        memoInput.setGravity(Gravity.TOP);
+        memoInput.setText(event.memo == null ? "" : event.memo);
+        root.addView(memoInput, matchWrap());
+
+        TextView colorLabel = new TextView(this);
+        colorLabel.setText("색상 선택");
+        colorLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        colorLabel.setPadding(0, dp(8), 0, dp(4));
+        root.addView(colorLabel, matchWrap());
+
+        final int[] selectedColor = new int[]{event.color};
+        final TextView colorPreview = new TextView(this);
+        colorPreview.setText("선택된 색상");
+        colorPreview.setGravity(Gravity.CENTER);
+        colorPreview.setTextColor(contrastTextColor(selectedColor[0]));
+        colorPreview.setBackground(makeRoundBackground(selectedColor[0], dp(6)));
+        root.addView(colorPreview, matchWrap());
+
+        LinearLayout colorRow = new LinearLayout(this);
+        colorRow.setOrientation(LinearLayout.HORIZONTAL);
+        for (int color : eventPalette) {
+            Button colorButton = new Button(this);
+            colorButton.setText(" ");
+            colorButton.setBackground(makeRoundBackground(color, dp(8)));
+            colorButton.setOnClickListener(v -> {
+                selectedColor[0] = color;
+                colorPreview.setTextColor(contrastTextColor(selectedColor[0]));
+                colorPreview.setBackground(makeRoundBackground(selectedColor[0], dp(6)));
+            });
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(46), 1);
+            cp.setMargins(dp(2), dp(2), dp(2), dp(2));
+            colorRow.addView(colorButton, cp);
+        }
+        root.addView(colorRow, matchWrap());
+
+        new AlertDialog.Builder(this)
+                .setTitle("기간 일정 수정")
+                .setView(wrapInScrollView(root))
+                .setPositiveButton("저장", (dialog, which) -> {
+                    String title = titleInput.getText().toString().trim();
+                    String memo = memoInput.getText().toString().trim();
+                    if (title.isEmpty()) title = memo.isEmpty() ? "일정" : "메모";
+                    if (endDate[0].isBefore(startDate[0])) {
+                        Toast.makeText(this, "종료 날짜가 시작 날짜보다 빠릅니다.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    db.updatePeriodEvent(event.id, title, startDate[0], endDate[0], selectedColor[0], memo);
+                    event.title = title;
+                    event.startDate = startDate[0];
+                    event.endDate = endDate[0];
+                    event.color = selectedColor[0];
+                    event.memo = memo;
+                    Toast.makeText(this, "기간 일정을 수정했습니다.", Toast.LENGTH_SHORT).show();
+                    renderMonth();
+                    updateSelectedMemoPanel(selectedDate);
+                    if (afterSave != null) afterSave.run();
                 })
                 .setNegativeButton("취소", null)
                 .show();
@@ -870,8 +1078,9 @@ public class MainActivity extends Activity {
                 .setMessage("'" + event.title + "' 일정을 삭제할까요?")
                 .setPositiveButton("삭제", (dialog, which) -> {
                     db.deletePeriodEvent(event.id);
-                    Toast.makeText(this, "삭제했습니다. 날짜 상세 창을 닫고 다시 열면 반영됩니다.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "삭제했습니다.", Toast.LENGTH_SHORT).show();
                     renderMonth();
+                    updateSelectedMemoPanel(selectedDate);
                 })
                 .setNegativeButton("취소", null)
                 .show();
@@ -1675,10 +1884,150 @@ public class MainActivity extends Activity {
         startActivity(intent);
     }
 
+    private void showPeriodEventList() {
+        List<PeriodEvent> events = db.getAllPeriodEvents();
+
+        ScrollView scrollView = new ScrollView(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(14), dp(8), dp(14), dp(8));
+        scrollView.addView(root);
+
+        TextView guide = makeMemoText("전체 기간 일정을 날짜순으로 보여줍니다. 처음 열 때는 오늘 이후 가장 가까운 일정 위치로 이동합니다. 예전 일정은 위로 스크롤해서 볼 수 있습니다.", 13, Color.DKGRAY, false);
+        root.addView(guide, matchWrap());
+
+        final View[] firstFutureRow = new View[]{null};
+        LocalDate today = LocalDate.now();
+        boolean futureFound = false;
+
+        if (events.isEmpty()) {
+            TextView empty = makeMemoText("등록된 기간 일정 없음", 14, Color.GRAY, false);
+            empty.setPadding(0, dp(14), 0, dp(14));
+            root.addView(empty, matchWrap());
+        } else {
+            for (PeriodEvent event : events) {
+                View row = addPeriodEventListRow(root, event);
+                if (!futureFound && !event.endDate.isBefore(today)) {
+                    firstFutureRow[0] = row;
+                    futureFound = true;
+                }
+            }
+            if (firstFutureRow[0] == null && root.getChildCount() > 1) {
+                firstFutureRow[0] = root.getChildAt(root.getChildCount() - 1);
+            }
+        }
+
+        Button closeButton = new Button(this);
+        closeButton.setText("닫기");
+        root.addView(closeButton, matchWrap());
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("기간 일정 목록")
+                .setView(scrollView)
+                .create();
+        closeButton.setOnClickListener(v -> dialog.dismiss());
+        dialog.setOnShowListener(d -> {
+            if (firstFutureRow[0] != null) {
+                scrollView.post(() -> scrollView.scrollTo(0, Math.max(0, firstFutureRow[0].getTop() - dp(8))));
+            }
+        });
+        dialog.show();
+    }
+
+    private View addPeriodEventListRow(LinearLayout root, final PeriodEvent event) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), dp(8), dp(10), dp(8));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(242, 242, 247));
+        bg.setCornerRadius(dp(12));
+        box.setBackground(bg);
+        LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        boxParams.setMargins(0, dp(8), 0, dp(4));
+        root.addView(box, boxParams);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        box.addView(titleRow, matchWrap());
+
+        View colorView = new View(this);
+        colorView.setBackgroundColor(event.color);
+        LinearLayout.LayoutParams colorParams = new LinearLayout.LayoutParams(dp(5), dp(30));
+        colorParams.setMargins(0, 0, dp(8), 0);
+        titleRow.addView(colorView, colorParams);
+
+        TextView titleText = makeMemoText(event.title, 15, Color.rgb(28, 28, 30), true);
+        titleText.setSingleLine(true);
+        titleRow.addView(titleText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView dateText = makeMemoText(formatEventListRange(event), 12, Color.rgb(99, 99, 102), false);
+        dateText.setGravity(Gravity.RIGHT);
+        titleRow.addView(dateText, new LinearLayout.LayoutParams(dp(142), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView memoText = makeMemoText(event.memo == null ? "" : event.memo.trim(), 12, Color.rgb(72, 72, 74), false);
+        memoText.setPadding(dp(13), dp(2), 0, dp(2));
+        memoText.setVisibility(memoText.getText().toString().isEmpty() ? View.GONE : View.VISIBLE);
+        box.addView(memoText, matchWrap());
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        buttons.setGravity(Gravity.RIGHT);
+        box.addView(buttons, matchWrap());
+
+        Button editButton = new Button(this);
+        editButton.setText("수정");
+        editButton.setTextSize(12);
+        buttons.addView(editButton, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        Button deleteButton = new Button(this);
+        deleteButton.setText("삭제");
+        deleteButton.setTextSize(12);
+        buttons.addView(deleteButton, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        editButton.setOnClickListener(v -> showEditEventDialog(event, selectedDate == null ? LocalDate.now() : selectedDate,
+                () -> updatePeriodEventListRow(event, titleText, dateText, memoText, colorView)));
+        deleteButton.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("기간 일정 삭제")
+                .setMessage("'" + event.title + "' 일정을 삭제할까요?")
+                .setPositiveButton("삭제", (dialog, which) -> {
+                    db.deletePeriodEvent(event.id);
+                    root.removeView(box);
+                    renderMonth();
+                    updateSelectedMemoPanel(selectedDate == null ? LocalDate.now() : selectedDate);
+                    Toast.makeText(this, "삭제했습니다.", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("취소", null)
+                .show());
+
+        return box;
+    }
+
+    private void updatePeriodEventListRow(PeriodEvent event, TextView titleText, TextView dateText,
+                                          TextView memoText, View colorView) {
+        titleText.setText(event.title);
+        dateText.setText(formatEventListRange(event));
+        memoText.setText(event.memo == null ? "" : event.memo.trim());
+        memoText.setVisibility(memoText.getText().toString().isEmpty() ? View.GONE : View.VISIBLE);
+        colorView.setBackgroundColor(event.color);
+    }
+
+    private String formatEventListRange(PeriodEvent event) {
+        if (event.startDate.equals(event.endDate)) {
+            return String.format(Locale.KOREAN, "%04d.%02d.%02d",
+                    event.startDate.getYear(), event.startDate.getMonthValue(), event.startDate.getDayOfMonth());
+        }
+        return String.format(Locale.KOREAN, "%04d.%02d.%02d-%04d.%02d.%02d",
+                event.startDate.getYear(), event.startDate.getMonthValue(), event.startDate.getDayOfMonth(),
+                event.endDate.getYear(), event.endDate.getMonthValue(), event.endDate.getDayOfMonth());
+    }
+
     private void showSettingsDialog() {
         String[] items = new String[]{
                 "주간 시작일 설정",
                 "근무 종류 관리",
+                "기간 일정 목록",
                 "휴일 수동 관리",
                 "공휴일 보기",
                 "앱 정보"
@@ -1688,8 +2037,9 @@ public class MainActivity extends Activity {
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) showBaseDateDialog(false);
                     else if (which == 1) showShiftTypesManager();
-                    else if (which == 2) showManualHolidayManager();
-                    else if (which == 3) showHolidayInfo();
+                    else if (which == 2) showPeriodEventList();
+                    else if (which == 3) showManualHolidayManager();
+                    else if (which == 4) showHolidayInfo();
                     else showAboutDialog();
                 })
                 .show();
@@ -2376,6 +2726,31 @@ public class MainActivity extends Activity {
             result = getResources().getDimensionPixelSize(resourceId);
         }
         return result;
+    }
+
+    private boolean isTouchInsideView(View view, MotionEvent event) {
+        if (view == null) return false;
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        float rawX = event.getRawX();
+        float rawY = event.getRawY();
+        return rawX >= location[0] && rawX <= location[0] + view.getWidth()
+                && rawY >= location[1] && rawY <= location[1] + view.getHeight();
+    }
+
+    private static class LimitedHeightScrollView extends ScrollView {
+        private final int maxHeight;
+
+        public LimitedHeightScrollView(Context context, int maxHeight) {
+            super(context);
+            this.maxHeight = maxHeight;
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int limitedHeightSpec = MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST);
+            super.onMeasure(widthMeasureSpec, limitedHeightSpec);
+        }
     }
 
     private ScrollView wrapInScrollView(View child) {
