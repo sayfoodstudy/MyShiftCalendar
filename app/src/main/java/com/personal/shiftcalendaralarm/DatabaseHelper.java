@@ -387,6 +387,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return getEventsOverlapping(start, end);
     }
 
+    public List<PeriodEvent> getAllPeriodEvents() {
+        List<PeriodEvent> result = new ArrayList<>();
+        SQLiteDatabase db = getReadableDatabase();
+        Cursor cursor = db.query("period_events", null,
+                null, null, null, null, "start_date ASC, end_date ASC, id ASC");
+        try {
+            while (cursor.moveToNext()) result.add(periodEventFromCursor(cursor));
+        } finally {
+            cursor.close();
+        }
+        return result;
+    }
+
     private List<PeriodEvent> getEventsOverlapping(LocalDate start, LocalDate end) {
         List<PeriodEvent> result = new ArrayList<>();
         SQLiteDatabase db = getReadableDatabase();
@@ -400,6 +413,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             cursor.close();
         }
         return result;
+    }
+
+    public void updatePeriodEvent(long id, String title, LocalDate startDate, LocalDate endDate, int color, String memo) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("title", title == null || title.trim().isEmpty() ? "일정" : title.trim());
+        values.put("start_date", DateUtil.iso(startDate));
+        values.put("end_date", DateUtil.iso(endDate));
+        values.put("color", color);
+        values.put("memo", memo == null ? "" : memo);
+        db.update("period_events", values, "id=?", new String[]{String.valueOf(id)});
     }
 
     public void deletePeriodEvent(long id) {
