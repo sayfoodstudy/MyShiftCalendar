@@ -70,6 +70,10 @@ public class MainActivity extends Activity {
     private TextView selectedMemoContent;
     private LimitedHeightScrollView memoContentScroll;
     private LinearLayout selectedMemoList;
+    private LinearLayout topHiddenEventIndicator;
+    private LinearLayout bottomHiddenEventIndicator;
+    private final List<View> memoEventRows = new ArrayList<>();
+    private final List<Integer> memoEventColors = new ArrayList<>();
     private boolean touchStartedInCalendar;
     private int titleSecretTapCount;
     private long lastTitleSecretTapTime;
@@ -216,6 +220,11 @@ public class MainActivity extends Activity {
         selectedMemoTitle.setTextColor(Color.rgb(28, 28, 30));
         memoPanel.addView(selectedMemoTitle, matchWrap());
 
+        topHiddenEventIndicator = new LinearLayout(this);
+        topHiddenEventIndicator.setOrientation(LinearLayout.HORIZONTAL);
+        topHiddenEventIndicator.setVisibility(View.GONE);
+        memoPanel.addView(topHiddenEventIndicator, matchWrap());
+
         memoContentScroll = new LimitedHeightScrollView(this, dp(150));
         memoContentScroll.setFillViewport(false);
         memoContentScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
@@ -226,6 +235,7 @@ public class MainActivity extends Activity {
             }
             return false;
         });
+        memoContentScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> updateMemoHiddenIndicators());
 
         selectedMemoList = new LinearLayout(this);
         selectedMemoList.setOrientation(LinearLayout.VERTICAL);
@@ -233,6 +243,11 @@ public class MainActivity extends Activity {
         memoContentScroll.addView(selectedMemoList, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         memoPanel.addView(memoContentScroll, matchWrap());
+
+        bottomHiddenEventIndicator = new LinearLayout(this);
+        bottomHiddenEventIndicator.setOrientation(LinearLayout.HORIZONTAL);
+        bottomHiddenEventIndicator.setVisibility(View.GONE);
+        memoPanel.addView(bottomHiddenEventIndicator, matchWrap());
 
         selectedMemoContent = new TextView(this);
 
@@ -634,6 +649,10 @@ public class MainActivity extends Activity {
 
         selectedMemoTitle.setText(date.format(DateUtil.KOREAN_DATE));
         selectedMemoList.removeAllViews();
+        memoEventRows.clear();
+        memoEventColors.clear();
+        if (topHiddenEventIndicator != null) topHiddenEventIndicator.setVisibility(View.GONE);
+        if (bottomHiddenEventIndicator != null) bottomHiddenEventIndicator.setVisibility(View.GONE);
 
         if (shift.finalShift != null) {
             TextView shiftLine = makeMemoText("근무: " + shift.finalShift.name + (shift.manualOverride ? " (수동 변경)" : ""), 13, Color.rgb(72, 72, 74), false);
@@ -646,12 +665,19 @@ public class MainActivity extends Activity {
 
         if (events.isEmpty()) {
             selectedMemoList.addView(makeMemoText("메모/일정 없음", 13, Color.GRAY, false), matchWrap());
-            selectedMemoList.addView(makeMemoText("살짝 누르면 이 영역에 메모가 표시되고, 두 번 누르면 근무 변경/일정 추가로 들어갑니다.", 12, Color.GRAY, false), matchWrap());
         } else {
             selectedMemoList.addView(makeMemoText("메모/기간일정", 13, Color.rgb(28, 28, 30), true), matchWrap());
             for (PeriodEvent event : events) {
-                addMainEventRow(selectedMemoList, event, date);
+                View row = addMainEventRow(selectedMemoList, event, date);
+                memoEventRows.add(row);
+                memoEventColors.add(event.color);
             }
+        }
+        if (memoContentScroll != null) {
+            memoContentScroll.post(() -> {
+                memoContentScroll.scrollTo(0, 0);
+                updateMemoHiddenIndicators();
+            });
         }
     }
 
@@ -665,7 +691,7 @@ public class MainActivity extends Activity {
         return tv;
     }
 
-    private void addMainEventRow(LinearLayout parent, final PeriodEvent event, final LocalDate selectedDate) {
+    private View addMainEventRow(LinearLayout parent, final PeriodEvent event, final LocalDate selectedDate) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(0, dp(5), 0, dp(5));
@@ -698,25 +724,52 @@ public class MainActivity extends Activity {
             box.addView(memo, matchWrap());
         }
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.RIGHT);
-
-        Button edit = new Button(this);
-        edit.setText("수정");
-        edit.setTextSize(12);
-        actions.addView(edit, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        Button delete = new Button(this);
-        delete.setText("삭제");
-        delete.setTextSize(12);
-        actions.addView(delete, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
-        box.addView(actions, matchWrap());
-
-        edit.setOnClickListener(v -> showEditEventDialog(event, selectedDate));
-        delete.setOnClickListener(v -> confirmDeleteEvent(event, selectedDate));
-
         parent.addView(box, matchWrap());
+        return box;
+    }
+
+    private void updateMemoHiddenIndicators() {
+        if (memoContentScroll == null || memoEventRows.isEmpty()) {
+            renderHiddenEventIndicator(topHiddenEventIndicator, new ArrayList<>());
+            renderHiddenEventIndicator(bottomHiddenEventIndicator, new ArrayList<>());
+            return;
+        }
+
+        int scrollTop = memoContentScroll.getScrollY();
+        int scrollBottom = scrollTop + memoContentScroll.getHeight();
+        List<Integer> aboveColors = new ArrayList<>();
+        List<Integer> belowColors = new ArrayList<>();
+
+        for (int i = 0; i < memoEventRows.size(); i++) {
+            View row = memoEventRows.get(i);
+            int color = memoEventColors.get(i);
+            if (row.getBottom() <= scrollTop) {
+                aboveColors.add(color);
+            } else if (row.getTop() >= scrollBottom) {
+                belowColors.add(color);
+            }
+        }
+        renderHiddenEventIndicator(topHiddenEventIndicator, aboveColors);
+        renderHiddenEventIndicator(bottomHiddenEventIndicator, belowColors);
+    }
+
+    private void renderHiddenEventIndicator(LinearLayout indicator, List<Integer> colors) {
+        if (indicator == null) return;
+        indicator.removeAllViews();
+        if (colors == null || colors.isEmpty()) {
+            indicator.setVisibility(View.GONE);
+            return;
+        }
+        indicator.setVisibility(View.VISIBLE);
+        indicator.setPadding(0, dp(2), 0, dp(2));
+        int max = Math.min(colors.size(), 10);
+        for (int i = 0; i < max; i++) {
+            View bar = new View(this);
+            bar.setBackgroundColor(colors.get(i));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(3), 1);
+            params.setMargins(dp(1), 0, dp(1), 0);
+            indicator.addView(bar, params);
+        }
     }
 
     private String formatEventDateRange(PeriodEvent event) {
