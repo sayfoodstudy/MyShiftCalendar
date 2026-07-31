@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
-        root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), dp(8));
+        root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), getNavigationBarHeight() + dp(8));
         scrollView.addView(root);
 
         LinearLayout topRow = new LinearLayout(this);
@@ -225,7 +225,7 @@ public class MainActivity extends Activity {
         topHiddenEventIndicator.setVisibility(View.GONE);
         memoPanel.addView(topHiddenEventIndicator, matchWrap());
 
-        memoContentScroll = new LimitedHeightScrollView(this, dp(150));
+        memoContentScroll = new LimitedHeightScrollView(this, dp(120));
         memoContentScroll.setFillViewport(false);
         memoContentScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         memoContentScroll.setOnTouchListener((v, event) -> {
@@ -647,26 +647,21 @@ public class MainActivity extends Activity {
         ShiftResult shift = calculateShift(date);
         List<PeriodEvent> events = db.getEventsForDate(date);
 
-        selectedMemoTitle.setText(date.format(DateUtil.KOREAN_DATE));
+        String header = date.format(DateUtil.KOREAN_DATE);
+        if (shift.finalShift != null) {
+            header += "   " + shift.finalShift.name;
+            if (shift.manualOverride) header += "*";
+        }
+        selectedMemoTitle.setText(header);
         selectedMemoList.removeAllViews();
         memoEventRows.clear();
         memoEventColors.clear();
         if (topHiddenEventIndicator != null) topHiddenEventIndicator.setVisibility(View.GONE);
         if (bottomHiddenEventIndicator != null) bottomHiddenEventIndicator.setVisibility(View.GONE);
 
-        if (shift.finalShift != null) {
-            TextView shiftLine = makeMemoText("근무: " + shift.finalShift.name + (shift.manualOverride ? " (수동 변경)" : ""), 13, Color.rgb(72, 72, 74), false);
-            selectedMemoList.addView(shiftLine, matchWrap());
-        }
-        if (shift.holidayLabel != null) {
-            TextView holidayLine = makeMemoText("휴일: " + shift.holidayLabel, 13, Color.rgb(255, 59, 48), false);
-            selectedMemoList.addView(holidayLine, matchWrap());
-        }
-
         if (events.isEmpty()) {
-            selectedMemoList.addView(makeMemoText("메모/일정 없음", 13, Color.GRAY, false), matchWrap());
+            // 공간 확보를 위해 빈 일정 안내 문구는 표시하지 않는다.
         } else {
-            selectedMemoList.addView(makeMemoText("메모/기간일정", 13, Color.rgb(28, 28, 30), true), matchWrap());
             for (PeriodEvent event : events) {
                 View row = addMainEventRow(selectedMemoList, event, date);
                 memoEventRows.add(row);
@@ -730,45 +725,68 @@ public class MainActivity extends Activity {
 
     private void updateMemoHiddenIndicators() {
         if (memoContentScroll == null || memoEventRows.isEmpty()) {
-            renderHiddenEventIndicator(topHiddenEventIndicator, new ArrayList<>());
-            renderHiddenEventIndicator(bottomHiddenEventIndicator, new ArrayList<>());
+            renderHiddenEventIndicator(topHiddenEventIndicator, new ArrayList<HiddenEventMarker>());
+            renderHiddenEventIndicator(bottomHiddenEventIndicator, new ArrayList<HiddenEventMarker>());
             return;
         }
 
         int scrollTop = memoContentScroll.getScrollY();
         int scrollBottom = scrollTop + memoContentScroll.getHeight();
-        List<Integer> aboveColors = new ArrayList<>();
-        List<Integer> belowColors = new ArrayList<>();
+        List<HiddenEventMarker> above = new ArrayList<>();
+        List<HiddenEventMarker> below = new ArrayList<>();
 
         for (int i = 0; i < memoEventRows.size(); i++) {
             View row = memoEventRows.get(i);
             int color = memoEventColors.get(i);
-            if (row.getBottom() <= scrollTop) {
-                aboveColors.add(color);
-            } else if (row.getTop() >= scrollBottom) {
-                belowColors.add(color);
+            int rowTop = row.getTop();
+            int rowBottom = row.getBottom();
+            int rowHeight = Math.max(1, row.getHeight());
+
+            if (rowBottom <= scrollTop) {
+                above.add(new HiddenEventMarker(color, 1f));
+            } else if (rowTop < scrollTop) {
+                float ratio = Math.min(1f, Math.max(0.25f, (float) (scrollTop - rowTop) / rowHeight));
+                above.add(new HiddenEventMarker(color, ratio));
+            } else if (rowTop >= scrollBottom) {
+                below.add(new HiddenEventMarker(color, 1f));
+            } else if (rowBottom > scrollBottom) {
+                float ratio = Math.min(1f, Math.max(0.25f, (float) (rowBottom - scrollBottom) / rowHeight));
+                below.add(new HiddenEventMarker(color, ratio));
             }
         }
-        renderHiddenEventIndicator(topHiddenEventIndicator, aboveColors);
-        renderHiddenEventIndicator(bottomHiddenEventIndicator, belowColors);
+        renderHiddenEventIndicator(topHiddenEventIndicator, above);
+        renderHiddenEventIndicator(bottomHiddenEventIndicator, below);
     }
 
-    private void renderHiddenEventIndicator(LinearLayout indicator, List<Integer> colors) {
+    private void renderHiddenEventIndicator(LinearLayout indicator, List<HiddenEventMarker> markers) {
         if (indicator == null) return;
         indicator.removeAllViews();
-        if (colors == null || colors.isEmpty()) {
+        if (markers == null || markers.isEmpty()) {
             indicator.setVisibility(View.GONE);
             return;
         }
         indicator.setVisibility(View.VISIBLE);
+        indicator.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         indicator.setPadding(0, dp(2), 0, dp(2));
-        int max = Math.min(colors.size(), 10);
+        int max = Math.min(markers.size(), 12);
         for (int i = 0; i < max; i++) {
+            HiddenEventMarker marker = markers.get(i);
             View bar = new View(this);
-            bar.setBackgroundColor(colors.get(i));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(3), 1);
-            params.setMargins(dp(1), 0, dp(1), 0);
+            bar.setBackgroundColor(marker.color);
+            int width = Math.max(dp(8), (int) (dp(28) * marker.ratio));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(width, dp(3));
+            params.setMargins(dp(2), 0, dp(2), 0);
             indicator.addView(bar, params);
+        }
+    }
+
+    private static class HiddenEventMarker {
+        int color;
+        float ratio;
+
+        HiddenEventMarker(int color, float ratio) {
+            this.color = color;
+            this.ratio = ratio;
         }
     }
 
@@ -1174,12 +1192,6 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(10), dp(18), dp(4));
-
-        TextView guide = new TextView(this);
-        guide.setText("알람 만들기와 알람 목록을 분리했습니다. 알람을 수정/삭제하려면 '알람 목록 보기'로 들어가세요.");
-        guide.setTextSize(14);
-        guide.setTextColor(Color.DKGRAY);
-        root.addView(guide, matchWrap());
 
         Button listButton = new Button(this);
         listButton.setText("알람 목록 보기");
@@ -1972,9 +1984,6 @@ public class MainActivity extends Activity {
         root.setPadding(dp(14), dp(8), dp(14), dp(8));
         scrollView.addView(root);
 
-        TextView guide = makeMemoText("전체 기간 일정을 날짜순으로 보여줍니다. 처음 열 때는 오늘 이후 가장 가까운 일정 위치로 이동합니다. 예전 일정은 위로 스크롤해서 볼 수 있습니다.", 13, Color.DKGRAY, false);
-        root.addView(guide, matchWrap());
-
         final View[] firstFutureRow = new View[]{null};
         LocalDate today = LocalDate.now();
         boolean futureFound = false;
@@ -2664,12 +2673,6 @@ public class MainActivity extends Activity {
         root.setPadding(dp(14), dp(8), dp(14), dp(8));
         scrollView.addView(root);
 
-        TextView guide = new TextView(this);
-        guide.setText("회사 휴일, 임시 휴일 등 내장 공휴일에 없는 날짜를 직접 휴일로 추가할 수 있습니다. 추가한 휴일도 주휴/조건알람/자동조건 계산에 반영됩니다.");
-        guide.setTextSize(13);
-        guide.setTextColor(Color.DKGRAY);
-        root.addView(guide, matchWrap());
-
         int year = currentMonth.getYear();
         List<String> lines = db.getCustomHolidayLinesForYear(year);
         TextView yearTitle = new TextView(this);
@@ -2899,6 +2902,15 @@ public class MainActivity extends Activity {
         int b = Color.blue(backgroundColor);
         double luminance = (0.299 * r + 0.587 * g + 0.114 * b);
         return luminance > 150 ? Color.BLACK : Color.WHITE;
+    }
+
+    private int getNavigationBarHeight() {
+        int result = 0;
+        int resourceId = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            result = getResources().getDimensionPixelSize(resourceId);
+        }
+        return result;
     }
 
     private int getStatusBarHeight() {
