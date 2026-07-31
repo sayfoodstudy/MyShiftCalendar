@@ -31,6 +31,10 @@ import android.widget.TextView;
 import android.widget.NumberPicker;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -42,6 +46,9 @@ import java.util.Map;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
+    private static final int REQUEST_BACKUP_CREATE = 9101;
+    private static final int REQUEST_BACKUP_OPEN = 9102;
+
     private DatabaseHelper db;
     private LocalDate currentMonth;
     private TextView monthTitle;
@@ -64,6 +71,8 @@ public class MainActivity extends Activity {
     private LimitedHeightScrollView memoContentScroll;
     private LinearLayout selectedMemoList;
     private boolean touchStartedInCalendar;
+    private int titleSecretTapCount;
+    private long lastTitleSecretTapTime;
 
     private final int[] eventPalette = new int[]{
             Color.rgb(255, 59, 48),
@@ -119,6 +128,7 @@ public class MainActivity extends Activity {
         appTitle.setTypeface(Typeface.DEFAULT_BOLD);
         appTitle.setTextColor(Color.rgb(28, 28, 30));
         appTitle.setGravity(Gravity.CENTER_VERTICAL);
+        appTitle.setOnClickListener(v -> handleTitleSecretTap());
         topRow.addView(appTitle, new LinearLayout.LayoutParams(0, dp(38), 1));
 
         Button alarmButton = makeCompactButton("⏰");
@@ -227,6 +237,18 @@ public class MainActivity extends Activity {
         selectedMemoContent = new TextView(this);
 
         setContentView(scrollView);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        if (requestCode == REQUEST_BACKUP_CREATE) {
+            exportBackupToUri(uri);
+        } else if (requestCode == REQUEST_BACKUP_OPEN) {
+            confirmRestoreBackup(uri);
+        }
     }
 
     @Override
@@ -2025,6 +2047,109 @@ public class MainActivity extends Activity {
         return String.format(Locale.KOREAN, "%04d.%02d.%02d-%04d.%02d.%02d",
                 event.startDate.getYear(), event.startDate.getMonthValue(), event.startDate.getDayOfMonth(),
                 event.endDate.getYear(), event.endDate.getMonthValue(), event.endDate.getDayOfMonth());
+    }
+
+    private void handleTitleSecretTap() {
+        long now = System.currentTimeMillis();
+        if (now - lastTitleSecretTapTime > 1500) {
+            titleSecretTapCount = 0;
+        }
+        lastTitleSecretTapTime = now;
+        titleSecretTapCount++;
+        if (titleSecretTapCount >= 5) {
+            titleSecretTapCount = 0;
+            showBackupRestoreSecretDialog();
+        }
+    }
+
+    private void showBackupRestoreSecretDialog() {
+        String[] items = new String[]{"데이터 백업", "데이터 복원"};
+        new AlertDialog.Builder(this)
+                .setTitle("데이터 백업/복원")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) startBackupExport();
+                    else startBackupImport();
+                })
+                .setNegativeButton("닫기", null)
+                .show();
+    }
+
+    private void startBackupExport() {
+        try {
+            String fileName = "ShiftCalendarBackup_" + new SimpleDateFormat("yyyyMMdd_HHmm", Locale.KOREAN).format(new Date()) + ".json";
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, fileName);
+            startActivityForResult(intent, REQUEST_BACKUP_CREATE);
+        } catch (Exception e) {
+            Toast.makeText(this, "백업 파일 선택 화면을 열지 못했습니다.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void startBackupImport() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            startActivityForResult(intent, REQUEST_BACKUP_OPEN);
+        } catch (Exception e) {
+            Toast.makeText(this, "복원 파일 선택 화면을 열지 못했습니다.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void exportBackupToUri(Uri uri) {
+        try (OutputStream outputStream = getContentResolver().openOutputStream(uri)) {
+            if (outputStream == null) throw new Exception("OutputStream null");
+            String json = db.exportBackupJson();
+            outputStream.write(json.getBytes(StandardCharsets.UTF_8));
+            outputStream.flush();
+            Toast.makeText(this, "데이터 백업을 완료했습니다.", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "백업 실패: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void confirmRestoreBackup(final Uri uri) {
+        new AlertDialog.Builder(this)
+                .setTitle("데이터 복원")
+                .setMessage("백업 파일로 복원하면 현재 앱 안의 설정, 근무 변경, 기간 일정, 알람, 수동 휴일 데이터가 백업 내용으로 바뀝니다. 계속할까요?")
+                .setPositiveButton("복원", (dialog, which) -> restoreBackupFromUri(uri))
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void restoreBackupFromUri(Uri uri) {
+        try {
+            String json = readTextFromUri(uri);
+            for (AlarmItem alarm : db.getAllAlarms()) {
+                AlarmScheduler.cancelAlarm(this, alarm.id);
+            }
+            db.restoreBackupJson(json);
+            db.close();
+            db = new DatabaseHelper(this);
+            selectedDate = LocalDate.now();
+            currentMonth = selectedDate.withDayOfMonth(1);
+            renderMonth();
+            updateSelectedMemoPanel(selectedDate);
+            AlarmScheduler.scheduleAllEnabled(this);
+            Toast.makeText(this, "데이터 복원을 완료했습니다.", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "복원 실패: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String readTextFromUri(Uri uri) throws Exception {
+        try (InputStream inputStream = getContentResolver().openInputStream(uri);
+             ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+            if (inputStream == null) throw new Exception("InputStream null");
+            byte[] data = new byte[4096];
+            int read;
+            while ((read = inputStream.read(data)) != -1) {
+                buffer.write(data, 0, read);
+            }
+            return new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     private void showSettingsDialog() {
