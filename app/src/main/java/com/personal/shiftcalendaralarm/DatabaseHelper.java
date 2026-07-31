@@ -9,7 +9,11 @@ import android.graphics.Color;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "shift_calendar_alarm.db";
@@ -589,6 +593,102 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public void deleteAlarm(long id) {
         SQLiteDatabase db = getWritableDatabase();
         db.delete("alarms", "id=?", new String[]{String.valueOf(id)});
+    }
+
+    public String exportBackupJson() throws Exception {
+        SQLiteDatabase db = getReadableDatabase();
+        JSONObject root = new JSONObject();
+        root.put("app", "ShiftCalendarAlarm");
+        root.put("backup_version", 1);
+        root.put("db_version", DB_VERSION);
+        root.put("created_at", System.currentTimeMillis());
+        root.put("settings", tableToJson(db, "settings"));
+        root.put("shift_types", tableToJson(db, "shift_types"));
+        root.put("shift_overrides", tableToJson(db, "shift_overrides"));
+        root.put("period_events", tableToJson(db, "period_events"));
+        root.put("alarms", tableToJson(db, "alarms"));
+        root.put("custom_holidays", tableToJson(db, "custom_holidays"));
+        return root.toString(2);
+    }
+
+    public void restoreBackupJson(String json) throws Exception {
+        JSONObject root = new JSONObject(json);
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            db.delete("alarms", null, null);
+            db.delete("period_events", null, null);
+            db.delete("shift_overrides", null, null);
+            db.delete("custom_holidays", null, null);
+            db.delete("shift_types", null, null);
+            db.delete("settings", null, null);
+
+            restoreTable(db, "settings", root.optJSONArray("settings"));
+            restoreTable(db, "shift_types", root.optJSONArray("shift_types"));
+            restoreTable(db, "shift_overrides", root.optJSONArray("shift_overrides"));
+            restoreTable(db, "period_events", root.optJSONArray("period_events"));
+            restoreTable(db, "alarms", root.optJSONArray("alarms"));
+            restoreTable(db, "custom_holidays", root.optJSONArray("custom_holidays"));
+
+            if (getShiftTypeByCodeInTransaction(db, CODE_DAY) == null) {
+                seedDefaultShiftTypes(db);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    private JSONArray tableToJson(SQLiteDatabase db, String table) throws Exception {
+        JSONArray array = new JSONArray();
+        Cursor cursor = db.query(table, null, null, null, null, null, null);
+        try {
+            while (cursor.moveToNext()) {
+                JSONObject row = new JSONObject();
+                String[] names = cursor.getColumnNames();
+                for (int i = 0; i < names.length; i++) {
+                    int type = cursor.getType(i);
+                    if (type == Cursor.FIELD_TYPE_NULL) row.put(names[i], JSONObject.NULL);
+                    else if (type == Cursor.FIELD_TYPE_INTEGER) row.put(names[i], cursor.getLong(i));
+                    else if (type == Cursor.FIELD_TYPE_FLOAT) row.put(names[i], cursor.getDouble(i));
+                    else row.put(names[i], cursor.getString(i));
+                }
+                array.put(row);
+            }
+        } finally {
+            cursor.close();
+        }
+        return array;
+    }
+
+    private void restoreTable(SQLiteDatabase db, String table, JSONArray array) throws Exception {
+        if (array == null) return;
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject row = array.getJSONObject(i);
+            ContentValues values = new ContentValues();
+            Iterator<String> keys = row.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                Object value = row.get(key);
+                if (value == null || value == JSONObject.NULL) values.putNull(key);
+                else if (value instanceof Integer) values.put(key, (Integer) value);
+                else if (value instanceof Long) values.put(key, (Long) value);
+                else if (value instanceof Double) values.put(key, (Double) value);
+                else if (value instanceof Boolean) values.put(key, ((Boolean) value) ? 1 : 0);
+                else values.put(key, String.valueOf(value));
+            }
+            db.insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+        }
+    }
+
+    private ShiftType getShiftTypeByCodeInTransaction(SQLiteDatabase db, String code) {
+        Cursor cursor = db.query("shift_types", null, "code=? AND active=1", new String[]{code}, null, null, null);
+        try {
+            if (cursor.moveToFirst()) return shiftTypeFromCursor(cursor);
+            return null;
+        } finally {
+            cursor.close();
+        }
     }
 
     private AlarmItem alarmFromCursor(Cursor cursor) {
