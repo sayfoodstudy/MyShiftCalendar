@@ -15,6 +15,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -1350,9 +1353,10 @@ public class MainActivity extends Activity {
                 .create();
         dialogRef[0] = dialog;
         dialog.setOnKeyListener((d, keyCode, event) -> {
-            if (canDeleteFolder && keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
                 d.dismiss();
-                showAlarmListForFolder(-1L, "전체 알람", false);
+                if (canDeleteFolder) showAlarmListForFolder(-1L, "전체 알람", false);
+                else showAlarmManager();
                 return true;
             }
             return false;
@@ -1386,10 +1390,9 @@ public class MainActivity extends Activity {
         root.addView(box, boxParams);
 
         TextView title = new TextView(this);
-        title.setText((alarm.enabled ? "● " : "○ ") + alarm.title);
+        setAlarmTitleText(title, alarm);
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY);
         box.addView(title, matchWrap());
 
         TextView desc = new TextView(this);
@@ -1433,8 +1436,7 @@ public class MainActivity extends Activity {
                 if (updated != null) alarm.nextTriggerMillis = updated.nextTriggerMillis;
                 Toast.makeText(this, "알람을 켰습니다.", Toast.LENGTH_SHORT).show();
             }
-            title.setText((alarm.enabled ? "● " : "○ ") + alarm.title);
-            title.setTextColor(alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY);
+            setAlarmTitleText(title, alarm);
             desc.setText(describeAlarm(alarm));
             toggle.setText(alarm.enabled ? "끄기" : "켜기");
         });
@@ -1850,8 +1852,7 @@ public class MainActivity extends Activity {
         alarm.weekdayMask = updated.weekdayMask;
         alarm.vibrate = updated.vibrate;
         alarm.nextTriggerMillis = updated.nextTriggerMillis;
-        rowTitle.setText((alarm.enabled ? "● " : "○ ") + alarm.title);
-        rowTitle.setTextColor(alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY);
+        setAlarmTitleText(rowTitle, alarm);
         rowDesc.setText(describeAlarm(alarm));
         rowToggle.setText(alarm.enabled ? "끄기" : "켜기");
     }
@@ -2132,6 +2133,19 @@ public class MainActivity extends Activity {
         return box;
     }
 
+    private void setAlarmTitleText(TextView titleView, AlarmItem alarm) {
+        String dot = alarm.enabled ? "●" : "○";
+        String text = dot + " " + alarm.title;
+        SpannableString span = new SpannableString(text);
+        int dotColor = alarm.enabled ? Color.rgb(52, 199, 89) : Color.LTGRAY;
+        int titleColor = alarm.enabled ? Color.rgb(28, 28, 30) : Color.GRAY;
+        span.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (text.length() > 2) {
+            span.setSpan(new ForegroundColorSpan(titleColor), 2, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        titleView.setText(span);
+    }
+
     private String describeAlarm(AlarmItem alarm) {
         StringBuilder sb = new StringBuilder();
         sb.append(AlarmCalculator.formatTime(alarm.hour, alarm.minute)).append("  ");
@@ -2284,6 +2298,14 @@ public class MainActivity extends Activity {
                 .setTitle("기간 일정 목록")
                 .setView(scrollView)
                 .create();
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                d.dismiss();
+                showSettingsDialog();
+                return true;
+            }
+            return false;
+        });
         closeButton.setOnClickListener(v -> dialog.dismiss());
         dialog.setOnShowListener(d -> {
             if (firstFutureRow[0] != null) {
@@ -2580,6 +2602,14 @@ public class MainActivity extends Activity {
                 .setTitle("근무 종류 관리")
                 .setView(scrollView)
                 .create();
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                d.dismiss();
+                showSettingsDialog();
+                return true;
+            }
+            return false;
+        });
         addButton.setOnClickListener(v -> {
             dialog.dismiss();
             showAddShiftTypeDialog();
@@ -2974,6 +3004,14 @@ public class MainActivity extends Activity {
                 .setTitle("휴일 수동 관리")
                 .setView(scrollView)
                 .create();
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                d.dismiss();
+                showSettingsDialog();
+                return true;
+            }
+            return false;
+        });
         addButton.setOnClickListener(v -> {
             dialog.dismiss();
             showAddManualHolidayDialog();
@@ -3079,7 +3117,7 @@ public class MainActivity extends Activity {
     }
 
     private void showAboutDialog() {
-        String message = "3교대 달력알람 v0.13-main-ui-color-snooze\n\n" +
+        String message = "3교대 달력알람 v0.28-dialog-back-green-dot\n\n" +
                 "현재 버전 기능:\n" +
                 "- 주간 → 당직 → 비번 반복 달력\n" +
                 "- 주간 시작일 설정\n" +
