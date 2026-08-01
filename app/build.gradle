@@ -11,7 +11,7 @@ android {
         applicationId 'com.personal.shiftcalendaralarm'
         minSdk 26
         targetSdk 35
-        versionCode 21
-        versionName '0.21-event-hidden-lines'
+        versionCode 22
+        versionName '0.22-fixed-main-panel'
     }
 }
