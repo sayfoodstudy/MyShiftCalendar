@@ -111,14 +111,13 @@ public class MainActivity extends Activity {
     }
 
     private void buildMainLayout() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(Color.WHITE);
-
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
         root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), getNavigationBarHeight() + dp(8));
-        scrollView.addView(root);
+        root.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT));
 
         LinearLayout topRow = new LinearLayout(this);
         topRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -251,7 +250,20 @@ public class MainActivity extends Activity {
 
         selectedMemoContent = new TextView(this);
 
-        setContentView(scrollView);
+        setContentView(root);
+        root.post(() -> adjustMemoPanelHeight(root));
+    }
+
+    private void adjustMemoPanelHeight(LinearLayout root) {
+        if (root == null || memoPanel == null || memoContentScroll == null || selectedMemoTitle == null) return;
+        int available = root.getHeight() - memoPanel.getTop() - root.getPaddingBottom() - dp(6);
+        int reserved = memoPanel.getPaddingTop() + memoPanel.getPaddingBottom()
+                + Math.max(selectedMemoTitle.getHeight(), dp(24)) + dp(18);
+        int maxContentHeight = available - reserved;
+        maxContentHeight = Math.max(dp(42), Math.min(dp(120), maxContentHeight));
+        memoContentScroll.setMaxHeight(maxContentHeight);
+        memoPanel.requestLayout();
+        memoContentScroll.post(this::updateMemoHiddenIndicators);
     }
 
     @Override
@@ -2933,11 +2945,16 @@ public class MainActivity extends Activity {
     }
 
     private static class LimitedHeightScrollView extends ScrollView {
-        private final int maxHeight;
+        private int maxHeight;
 
         public LimitedHeightScrollView(Context context, int maxHeight) {
             super(context);
             this.maxHeight = maxHeight;
+        }
+
+        public void setMaxHeight(int maxHeight) {
+            this.maxHeight = Math.max(1, maxHeight);
+            requestLayout();
         }
 
         @Override
