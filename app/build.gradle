@@ -11,7 +11,7 @@ android {
         applicationId 'com.personal.shiftcalendaralarm'
         minSdk 26
         targetSdk 35
-        versionCode 26
-        versionName '0.26-alarm-folders-or'
+        versionCode 27
+        versionName '0.27-alarm-folder-back'
     }
 }
