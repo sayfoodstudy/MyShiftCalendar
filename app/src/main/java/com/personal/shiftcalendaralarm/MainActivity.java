@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
-        root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), getNavigationBarHeight() + dp(8));
+        root.setPadding(dp(6), getStatusBarHeight() + dp(8), dp(6), getNavigationBarHeight() + dp(2));
         root.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.MATCH_PARENT));
@@ -210,7 +210,7 @@ public class MainActivity extends Activity {
         memoPanel.setBackground(memoBg);
         LinearLayout.LayoutParams memoParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        memoParams.setMargins(0, dp(10), 0, 0);
+        memoParams.setMargins(0, dp(0), 0, 0);
         root.addView(memoPanel, memoParams);
 
         selectedMemoTitle = new TextView(this);
@@ -224,7 +224,7 @@ public class MainActivity extends Activity {
         topHiddenEventIndicator.setVisibility(View.GONE);
         memoPanel.addView(topHiddenEventIndicator, matchWrap());
 
-        memoContentScroll = new LimitedHeightScrollView(this, dp(120));
+        memoContentScroll = new LimitedHeightScrollView(this, dp(190));
         memoContentScroll.setFillViewport(false);
         memoContentScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         memoContentScroll.setOnTouchListener((v, event) -> {
@@ -256,11 +256,11 @@ public class MainActivity extends Activity {
 
     private void adjustMemoPanelHeight(LinearLayout root) {
         if (root == null || memoPanel == null || memoContentScroll == null || selectedMemoTitle == null) return;
-        int available = root.getHeight() - memoPanel.getTop() - root.getPaddingBottom() - dp(6);
+        int available = root.getHeight() - memoPanel.getTop() - root.getPaddingBottom();
         int reserved = memoPanel.getPaddingTop() + memoPanel.getPaddingBottom()
-                + Math.max(selectedMemoTitle.getHeight(), dp(24)) + dp(18);
+                + Math.max(selectedMemoTitle.getHeight(), dp(24)) + dp(4);
         int maxContentHeight = available - reserved;
-        maxContentHeight = Math.max(dp(42), Math.min(dp(120), maxContentHeight));
+        maxContentHeight = Math.max(dp(42), Math.min(dp(190), maxContentHeight));
         memoContentScroll.setMaxHeight(maxContentHeight);
         memoPanel.requestLayout();
         memoContentScroll.post(this::updateMemoHiddenIndicators);
@@ -457,7 +457,7 @@ public class MainActivity extends Activity {
             tv.setGravity(Gravity.CENTER);
             tv.setTypeface(Typeface.DEFAULT_BOLD);
             tv.setTextSize(12);
-            tv.setPadding(0, dp(3), 0, dp(3));
+            tv.setPadding(0, dp(2), 0, dp(2));
             if (i == 0) tv.setTextColor(Color.rgb(211, 47, 47));
             else if (i == 6) tv.setTextColor(Color.rgb(21, 101, 192));
             else tv.setTextColor(Color.DKGRAY);
@@ -501,7 +501,7 @@ public class MainActivity extends Activity {
         });
         GridLayout.LayoutParams params = new GridLayout.LayoutParams();
         params.width = 0;
-        params.height = dp(80);
+        params.height = dp(76);
         params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
         params.setMargins(0, 0, 0, 0);
         cell.setLayoutParams(params);
