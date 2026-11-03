@@ -1,4 +1,4 @@
-```java
+
 package com.personal.shiftcalendaralarm;
 
 import android.Manifest;
@@ -3392,4 +3392,4 @@ public class MainActivity extends Activity {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 }
-```
+
