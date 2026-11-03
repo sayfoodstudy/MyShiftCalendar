@@ -1,3 +1,4 @@
+```java
 package com.personal.shiftcalendaralarm;
 
 import android.Manifest;
@@ -988,6 +989,10 @@ public class MainActivity extends Activity {
                         db.setShiftOverride(date, selected.id);
                         Toast.makeText(this, selected.name + "으로 변경했습니다.", Toast.LENGTH_SHORT).show();
                     }
+
+                    // ⭐ [핵심 추가] 근무가 바뀌었으므로 즉시 오늘 알람을 재계산해서 자동 반영합니다!
+                    AlarmScheduler.scheduleAllEnabled(MainActivity.this);
+
                     renderMonth();
                     showDayDetail(date);
                 })
@@ -2472,7 +2477,7 @@ public class MainActivity extends Activity {
         deleteButton.setText("삭제");
         deleteButton.setTextSize(12);
         buttons.addView(deleteButton, new LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT));
-
+        
         editButton.setOnClickListener(v -> showEditEventDialog(event, selectedDate == null ? LocalDate.now() : selectedDate,
                 () -> updatePeriodEventListRow(event, titleText, dateText, memoText, colorView)));
         deleteButton.setOnClickListener(v -> new AlertDialog.Builder(this)
@@ -2670,6 +2675,10 @@ public class MainActivity extends Activity {
                 .setPositiveButton("저장", (d, which) -> {
                     db.setBaseDate(selected[0]);
                     Toast.makeText(this, "주간 시작일을 저장했습니다.", Toast.LENGTH_SHORT).show();
+                    
+                    // ⭐ [핵심 추가] 주간 시작일 변경 시에도 모든 알람 즉시 다시 계산
+                    AlarmScheduler.scheduleAllEnabled(MainActivity.this);
+                    
                     renderMonth();
                 })
                 .create();
@@ -3383,3 +3392,4 @@ public class MainActivity extends Activity {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 }
+```
